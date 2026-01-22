@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+data/
+
+# Logs
+logs/
+*.log
+
+# Environment variables
+config/.env
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Exports
+exports/
+*.xlsx
+
+# Claude files
+.claude/
+.claude.json
+.claude.json.backup
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Bash history
+.bash_history
+.bash_logout
+.bashrc
+.profile
+.sudo_as_admin_successful
+.wget-hsts
+
+# SystemD files (keep in repo but don't track changes after initial commit)
+# systemd/
+
+# Other
+motd.legal-displayed
