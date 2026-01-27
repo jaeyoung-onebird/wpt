@@ -1,0 +1,27 @@
+version: '3.8'
+
+# Development environment - DB and Redis only
+# Run backend and frontend locally for hot reloading
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: wpc-db-dev
+    environment:
+      POSTGRES_USER: wpc
+      POSTGRES_PASSWORD: wpc_dev
+      POSTGRES_DB: workproof_chain
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    container_name: wpc-redis-dev
+    ports:
+      - "6379:6379"
+
+volumes:
+  postgres_data_dev:

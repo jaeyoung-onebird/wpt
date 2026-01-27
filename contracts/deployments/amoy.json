@@ -1,0 +1,12 @@
+{
+  "network": "amoy",
+  "proxyAddress": "0x0940aB8b0f4492C6eAd911cb225f3Da0c4bBEAAB",
+  "implementationAddress": "0x6cc6872744754f9B72713845E5d8A1Ca686e6d61",
+  "deployer": "0x8bAD63A484b4b95C994f7FD1506f79ca645b012e",
+  "deployedAt": "2026-01-24T20:18:26.373Z",
+  "tokenInfo": {
+    "name": "WorkProof Token",
+    "symbol": "WPT",
+    "decimals": 0
+  }
+}

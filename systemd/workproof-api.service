@@ -1,0 +1,19 @@
+[Unit]
+Description=WorkProof Chain API Server
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/workproof-chain-v2
+ExecStart=/usr/bin/python3 -m uvicorn src.api.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+Environment="PYTHONUNBUFFERED=1"
+Environment="PYTHONPATH=/home/ubuntu/workproof-chain-v2/src"
+
+[Install]
+WantedBy=multi-user.target

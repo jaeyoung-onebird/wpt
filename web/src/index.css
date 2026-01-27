@@ -1,0 +1,543 @@
+/* Pretendard 폰트 */
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* CSS 변수 - 토스 스타일 Navy → Blue → Purple → Pink 팔레트 */
+:root {
+  /* Primary - Toss Blue */
+  --color-primary: #3182F6;
+  --color-primary-hover: #1B64DA;
+  --color-primary-light: #E8F3FF;
+  --color-primary-400: #4593FC;
+
+  /* Navy - 깊이감, 신뢰 */
+  --color-navy: #191F28;
+  --color-navy-light: #333D4B;
+  --color-navy-50: #F2F4F6;
+
+  /* Secondary - Violet Purple (블록체인, 기술) */
+  --color-secondary: #8B5CF6;
+  --color-secondary-hover: #7C3AED;
+  --color-secondary-light: #F5F3FF;
+  --color-secondary-300: #A78BFA;
+
+  /* Accent - Soft Pink (포인트) */
+  --color-accent: #F04452;
+  --color-accent-hover: #DB2777;
+  --color-accent-light: #FFF0F0;
+  --color-accent-300: #F472B6;
+
+  /* Backgrounds - 토스 스타일 */
+  --color-bg: #F4F5F7;
+  --color-bg-app: #F4F5F7;
+  --color-bg-card: #FFFFFF;
+  --color-card: #FFFFFF;
+  --color-divider: #EAEBEE;
+
+  /* Borders */
+  --color-border: #E5E8EB;
+
+  /* Text - 토스 스타일 */
+  --color-text: #191F28;
+  --color-text-title: #191F28;
+  --color-text-body: #333D4B;
+  --color-text-secondary: #6B7684;
+  --color-text-sub: #8B95A1;
+  --color-text-disabled: #B0B8C1;
+
+  /* Status Colors */
+  --color-status-open: #3182F6;
+  --color-status-confirm: #8B5CF6;
+  --color-status-wait: #B0B8C1;
+  --color-status-cancel: #F04452;
+
+  /* Semantic Colors */
+  --color-success: #3182F6;
+  --color-success-light: #E8F3FF;
+  --color-warning: #FF9200;
+  --color-warning-light: #FFF4E0;
+  --color-error: #F04452;
+  --color-error-light: #FFF0F0;
+  --color-info: #4593FC;
+
+  /* Money Colors - 토스 블루 */
+  --color-money: #3182F6;
+}
+
+/* 기본 스타일 */
+body {
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  -webkit-font-smoothing: antialiased;
+  margin: 0;
+  padding: 0;
+}
+
+/* 토스 스타일 컴포넌트 */
+@layer components {
+  /* 카드 - 토스 스타일 */
+  .card {
+    @apply bg-white rounded-2xl p-4;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+
+  .card-hover {
+    @apply transition-all active:scale-[0.98] cursor-pointer;
+  }
+
+  .card-hover:hover {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+
+  /* 버튼 - 토스 스타일 */
+  .btn {
+    @apply px-5 py-2.5 rounded-xl font-semibold transition-all active:scale-[0.98] text-sm;
+  }
+
+  .btn-primary {
+    @apply btn text-white;
+    background-color: #3182F6;
+  }
+
+  .btn-primary:hover {
+    background-color: #1B64DA;
+  }
+
+  .btn-secondary {
+    @apply btn;
+    background-color: #F4F5F7;
+    color: #6B7684;
+  }
+
+  .btn-secondary:hover {
+    background-color: #EAEBEE;
+  }
+
+  .btn-outline {
+    @apply btn bg-white;
+    border: 1px solid #E5E8EB;
+    color: #333D4B;
+  }
+
+  /* 인풋 */
+  .input {
+    @apply w-full px-4 py-2.5 bg-gray-50 rounded-xl border border-gray-200 focus:ring-2 focus:ring-blue-100 focus:border-blue-400 focus:bg-white transition-all outline-none text-sm;
+  }
+
+  /* 칩 스타일 배지 - 토스 스타일 */
+  .chip {
+    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium;
+  }
+
+  .chip-recruiting {
+    @apply chip text-white;
+    background-color: #3182F6;
+  }
+
+  .chip-pending {
+    @apply chip;
+    background-color: #F4F5F7;
+    color: #6B7684;
+  }
+
+  .chip-confirmed {
+    @apply chip text-white;
+    background-color: #8B5CF6;
+  }
+
+  .chip-completed {
+    @apply chip;
+    background-color: #F4F5F7;
+    color: #6B7684;
+  }
+
+  .chip-rejected {
+    @apply chip;
+    background-color: #FFF0F0;
+    color: #F04452;
+  }
+
+  .chip-waitlist {
+    @apply chip;
+    background-color: #F5F3FF;
+    color: #8B5CF6;
+  }
+
+  /* 급여 금액 강조 */
+  .pay-amount {
+    @apply text-xl font-bold;
+    color: var(--color-text);
+  }
+
+  .pay-amount-large {
+    @apply text-2xl font-bold;
+    color: var(--color-text);
+  }
+
+  /* 섹션 타이틀 - 토스 스타일 */
+  .section-title {
+    @apply text-sm font-medium mb-2;
+    color: #6B7684;
+  }
+
+  /* Empty State */
+  .empty-state {
+    @apply flex flex-col items-center justify-center py-12 text-center;
+  }
+
+  .empty-state-icon {
+    @apply w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4;
+  }
+
+  .empty-state-title {
+    @apply text-base font-medium text-gray-900 mb-1;
+  }
+
+  .empty-state-desc {
+    @apply text-sm;
+    color: var(--color-text-secondary);
+  }
+
+  /* 리스트 아이템 */
+  .list-item {
+    @apply flex items-center justify-between py-3 border-b border-gray-100 last:border-0;
+  }
+
+  /* 필터 칩 그룹 */
+  .filter-chips {
+    @apply flex gap-2 overflow-x-auto pb-2 -mx-4 px-4;
+    scrollbar-width: none;
+  }
+
+  .filter-chip {
+    @apply px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all;
+    color: var(--color-text-secondary);
+    background-color: transparent;
+  }
+
+  .filter-chip-active {
+    @apply text-white;
+    background-color: var(--color-text);
+  }
+
+  /* 메트릭 카드 */
+  .metric-card {
+    @apply bg-white rounded-xl p-4 text-center;
+  }
+
+  .metric-value {
+    @apply text-2xl font-bold;
+    color: var(--color-text);
+  }
+
+  .metric-label {
+    @apply text-xs mt-1;
+    color: var(--color-text-secondary);
+  }
+
+  /* 퀵 메뉴 */
+  .quick-menu-item {
+    @apply flex items-center gap-3 py-3 px-1 text-left;
+    color: var(--color-text);
+  }
+
+  .quick-menu-icon {
+    @apply w-10 h-10 rounded-xl flex items-center justify-center text-lg;
+    background-color: var(--color-bg);
+  }
+
+  /* 드롭다운 */
+  .select {
+    @apply w-full px-4 py-2.5 bg-white rounded-xl border border-gray-200 text-sm appearance-none cursor-pointer;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%238B95A1' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e");
+    background-position: right 0.75rem center;
+    background-repeat: no-repeat;
+    background-size: 1.25em 1.25em;
+  }
+
+  /* 테이블 스타일 */
+  .data-row {
+    @apply flex justify-between items-center py-2.5 text-sm;
+  }
+
+  .data-label {
+    color: var(--color-text-secondary);
+  }
+
+  .data-value {
+    @apply font-medium;
+    color: var(--color-text);
+  }
+
+  /* 금액 강조 스타일 - 토스 블루 */
+  .money-primary {
+    @apply font-bold;
+    color: #3182F6;
+  }
+
+  .money-accent {
+    @apply font-bold;
+    color: #3182F6;
+  }
+
+  .money-highlight {
+    @apply text-2xl font-bold;
+    color: #3182F6;
+  }
+
+  /* 실수령액 배지 - 블루 테마 */
+  .net-pay-badge {
+    @apply inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium;
+    background-color: var(--color-primary-light);
+    color: var(--color-primary);
+  }
+
+  /* 당일정산 배지 */
+  .same-day-badge {
+    @apply inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium;
+    background-color: var(--color-primary-light);
+    color: var(--color-primary);
+  }
+
+  /* 신뢰 배지 스타일 - 토스 스타일 */
+  .trust-badge {
+    @apply inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium;
+    background-color: #E8F3FF;
+    color: #3182F6;
+  }
+
+  /* 블록체인 배지 - 퍼플 테마 */
+  .trust-badge-blockchain {
+    @apply inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium;
+    background-color: #F5F3FF;
+    color: #8B5CF6;
+  }
+
+  /* CTA 버튼 - 토스 스타일 */
+  .btn-cta {
+    @apply w-full py-3.5 rounded-xl font-semibold text-base transition-all active:scale-[0.98] flex items-center justify-center gap-2;
+    background-color: #3182F6;
+    color: white;
+  }
+
+  .btn-cta:hover {
+    background-color: #1B64DA;
+  }
+
+  .btn-cta-success {
+    @apply btn-cta;
+    background-color: #3182F6;
+  }
+
+  .btn-cta-outline {
+    @apply w-full py-3.5 rounded-xl font-semibold text-base transition-all active:scale-[0.98] flex items-center justify-center gap-2;
+    background-color: white;
+    color: #3182F6;
+    border: 1.5px solid #3182F6;
+  }
+
+  /* 온보딩 카드 - Navy 그라데이션 */
+  .onboarding-card {
+    @apply relative overflow-hidden rounded-2xl p-5;
+    background: linear-gradient(135deg, #191F28 0%, #333D4B 100%);
+    color: white;
+  }
+
+  .onboarding-card-pattern {
+    @apply absolute top-0 right-0 opacity-10;
+    width: 150px;
+    height: 150px;
+    background: radial-gradient(circle, white 20%, transparent 20%);
+    background-size: 20px 20px;
+  }
+
+  /* 개선된 Empty State */
+  .empty-state-modern {
+    @apply flex flex-col items-center justify-center py-16 px-6 text-center;
+  }
+
+  .empty-state-icon-modern {
+    @apply w-20 h-20 rounded-2xl flex items-center justify-center mb-5 text-3xl;
+    background-color: var(--color-primary-light);
+  }
+
+  .empty-state-title-modern {
+    @apply text-lg font-semibold mb-2;
+    color: var(--color-text-title);
+  }
+
+  .empty-state-desc-modern {
+    @apply text-sm leading-relaxed mb-6;
+    color: var(--color-text-sub);
+  }
+
+  /* 추천 카드 하이라이트 */
+  .recommended-card {
+    @apply relative overflow-hidden;
+    border: 2px solid var(--color-primary);
+  }
+
+  .recommended-badge {
+    @apply absolute top-0 right-0 px-3 py-1 text-xs font-bold text-white rounded-bl-xl;
+    background-color: var(--color-primary);
+  }
+
+  /* 근무 완료 성공 애니메이션 - 블루 테마 */
+  .success-check {
+    @apply inline-flex items-center justify-center w-16 h-16 rounded-full mb-4;
+    background-color: var(--color-primary-light);
+    color: var(--color-primary);
+    animation: success-pop 0.5s ease-out;
+  }
+
+  @keyframes success-pop {
+    0% { transform: scale(0.5); opacity: 0; }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
+  /* 진행 상태 표시 */
+  .progress-step {
+    @apply flex items-center gap-3 py-3;
+  }
+
+  .progress-step-number {
+    @apply w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold;
+    background-color: var(--color-primary-light);
+    color: var(--color-primary);
+  }
+
+  .progress-step-active .progress-step-number {
+    background-color: var(--color-primary);
+    color: white;
+  }
+
+  .progress-step-completed .progress-step-number {
+    background-color: var(--color-primary);
+    color: white;
+  }
+
+  /* ========================================
+     블록체인/기술 퍼플 테마 스타일
+     ======================================== */
+
+  /* 블록체인 텍스트 강조 */
+  .text-blockchain {
+    color: var(--color-secondary);
+  }
+
+  /* 블록체인 배경 강조 */
+  .bg-blockchain {
+    background-color: var(--color-secondary-light);
+  }
+
+  /* 블록체인 카드 (증명서, 기록 등) - Purple to Pink 그라데이션 */
+  .blockchain-card {
+    @apply relative overflow-hidden rounded-2xl p-5;
+    background: linear-gradient(135deg, #8B5CF6 0%, #EC4899 100%);
+    color: white;
+  }
+
+  .blockchain-card-pattern {
+    @apply absolute top-0 right-0 opacity-10;
+    width: 150px;
+    height: 150px;
+    background: radial-gradient(circle, white 20%, transparent 20%);
+    background-size: 20px 20px;
+  }
+
+  /* 블록체인 아이콘 배지 */
+  .blockchain-icon {
+    @apply w-10 h-10 rounded-xl flex items-center justify-center;
+    background-color: var(--color-secondary-light);
+    color: var(--color-secondary);
+  }
+
+  /* 증명 완료 배지 */
+  .verified-badge {
+    @apply inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold;
+    background-color: var(--color-secondary-light);
+    color: var(--color-secondary);
+  }
+
+  /* 퍼플 버튼 (블록체인 관련 액션) */
+  .btn-blockchain {
+    @apply btn text-white;
+    background-color: var(--color-secondary);
+  }
+
+  .btn-blockchain:hover {
+    background-color: var(--color-secondary-hover);
+  }
+
+  /* 퍼플 CTA 버튼 */
+  .btn-cta-blockchain {
+    @apply w-full py-3.5 rounded-xl font-semibold text-base transition-all active:scale-[0.98] flex items-center justify-center gap-2 text-white;
+    background-color: var(--color-secondary);
+  }
+
+  .btn-cta-blockchain:hover {
+    background-color: var(--color-secondary-hover);
+  }
+
+  /* 하이라이트 텍스트 (블록체인 문구) */
+  .highlight-blockchain {
+    @apply font-semibold;
+    color: var(--color-secondary);
+  }
+
+  /* 근무기록 보장 배너 */
+  .blockchain-banner {
+    @apply flex items-center gap-3 px-4 py-3 rounded-xl;
+    background-color: var(--color-secondary-light);
+    border: 1px solid #DDD6FE;
+  }
+
+  .blockchain-banner-text {
+    @apply text-sm font-medium;
+    color: var(--color-secondary);
+  }
+}
+
+/* 스크롤바 숨기기 */
+::-webkit-scrollbar {
+  display: none;
+}
+
+* {
+  scrollbar-width: none;
+}
+
+/* Safe area 대응 */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+/* 애니메이션 */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-up {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.2s ease-out;
+}
+
+.animate-slide-up {
+  animation: slide-up 0.3s ease-out;
+}

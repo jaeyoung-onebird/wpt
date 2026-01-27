@@ -1,0 +1,642 @@
+import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { authAPI, bigdataAPI, workersAPI } from '../api/client';
+import api from '../api/client';
+
+export default function Register() {
+  const navigate = useNavigate();
+  const { login, checkAuth } = useAuth();
+  const fileInputRef = useRef(null);
+
+  const [step, setStep] = useState(1); // 1: 계정정보, 2: 프로필정보
+  const [loading, setLoading] = useState(false);
+
+  // Step 1: 계정 정보
+  const [email, setEmail] = useState('');
+  const [emailChecked, setEmailChecked] = useState(false);
+  const [emailAvailable, setEmailAvailable] = useState(false);
+  const [checkingEmail, setCheckingEmail] = useState(false);
+  const [password, setPassword] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
+
+  // Step 2: 프로필 정보
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [birthDate, setBirthDate] = useState('');
+  const [gender, setGender] = useState('');
+  const [bankName, setBankName] = useState('');
+  const [bankAccount, setBankAccount] = useState('');
+
+  // 사진 업로드
+  const [photoFile, setPhotoFile] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState(null);
+  const [compressing, setCompressing] = useState(false);
+
+  // 지역 선택
+  const [regions, setRegions] = useState([]);
+  const [sidoList, setSidoList] = useState([]);
+  const [sigunguList, setSigunguList] = useState([]);
+  const [selectedSido, setSelectedSido] = useState('');
+  const [regionId, setRegionId] = useState('');
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [step]);
+
+  // 지역 데이터 로드
+  useEffect(() => {
+    const loadRegions = async () => {
+      try {
+        const { data } = await bigdataAPI.getRegions();
+        const regionsData = data.regions || [];
+        setRegions(regionsData);
+        const uniqueSido = [...new Set(regionsData.map(r => r.sido))];
+        setSidoList(uniqueSido);
+      } catch (error) {
+        console.error('Failed to load regions:', error);
+      }
+    };
+    loadRegions();
+  }, []);
+
+  // 시도 선택 시 시군구 필터링
+  useEffect(() => {
+    if (selectedSido) {
+      const filtered = regions.filter(r => r.sido === selectedSido);
+      setSigunguList(filtered);
+    } else {
+      setSigunguList([]);
+    }
+  }, [selectedSido, regions]);
+
+  const handleSidoChange = (e) => {
+    const sido = e.target.value;
+    setSelectedSido(sido);
+    setRegionId('');
+  };
+
+  // 이미지 압축 함수 (최대 800px, 품질 0.7)
+  const compressImage = (file, maxWidth = 800, quality = 0.7) => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let { width, height } = img;
+
+          if (width > maxWidth) {
+            height = (height * maxWidth) / width;
+            width = maxWidth;
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+
+          canvas.toBlob(
+            (blob) => {
+              const compressedFile = new File([blob], file.name, {
+                type: 'image/jpeg',
+                lastModified: Date.now(),
+              });
+              resolve(compressedFile);
+            },
+            'image/jpeg',
+            quality
+          );
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // 사진 선택 핸들러
+  const handlePhotoSelect = async (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (!file.type.startsWith('image/')) {
+        alert('이미지 파일만 선택 가능합니다');
+        return;
+      }
+
+      setCompressing(true);
+      try {
+        const compressedFile = await compressImage(file, 800, 0.7);
+        setPhotoFile(compressedFile);
+
+        const reader = new FileReader();
+        reader.onload = (e) => setPhotoPreview(e.target.result);
+        reader.readAsDataURL(compressedFile);
+      } catch (error) {
+        console.error('이미지 압축 실패:', error);
+        setPhotoFile(file);
+        const reader = new FileReader();
+        reader.onload = (e) => setPhotoPreview(e.target.result);
+        reader.readAsDataURL(file);
+      } finally {
+        setCompressing(false);
+      }
+    }
+  };
+
+  // 이메일 형식 검증
+  const isValidEmail = (value) => {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+  };
+
+  // 이메일 중복 체크
+  const checkEmailDuplicate = async () => {
+    if (!email || !isValidEmail(email)) {
+      alert('올바른 이메일을 입력해주세요');
+      return;
+    }
+
+    setCheckingEmail(true);
+    try {
+      const { data } = await api.get('/api/auth/check-email', { params: { email } });
+      setEmailChecked(true);
+      setEmailAvailable(data.available);
+      if (!data.available) {
+        alert('이미 사용중인 이메일입니다');
+      }
+    } catch (error) {
+      alert('이메일 확인에 실패했습니다');
+    } finally {
+      setCheckingEmail(false);
+    }
+  };
+
+  // 이메일 변경 시 중복체크 초기화
+  const handleEmailChange = (e) => {
+    setEmail(e.target.value);
+    setEmailChecked(false);
+    setEmailAvailable(false);
+  };
+
+  // 전화번호 포맷
+  const formatPhone = (value) => {
+    const numbers = value.replace(/\D/g, '');
+    if (numbers.length <= 3) return numbers;
+    if (numbers.length <= 7) return `${numbers.slice(0, 3)}-${numbers.slice(3)}`;
+    return `${numbers.slice(0, 3)}-${numbers.slice(3, 7)}-${numbers.slice(7, 11)}`;
+  };
+
+  // 생년월일 포맷 (YYYY-MM-DD)
+  const formatBirthDate = (value) => {
+    const numbers = value.replace(/\D/g, '');
+    if (numbers.length <= 4) return numbers;
+    if (numbers.length <= 6) return `${numbers.slice(0, 4)}-${numbers.slice(4)}`;
+    return `${numbers.slice(0, 4)}-${numbers.slice(4, 6)}-${numbers.slice(6, 8)}`;
+  };
+
+  // 생년월일 유효성 검사
+  const isValidBirthDate = (value) => {
+    if (!value) return false;
+    const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return false;
+    const [, year, month, day] = match;
+    const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+    return date.getFullYear() === parseInt(year) &&
+           date.getMonth() === parseInt(month) - 1 &&
+           date.getDate() === parseInt(day) &&
+           parseInt(year) >= 1900 && parseInt(year) <= new Date().getFullYear();
+  };
+
+  // Step 1 검증
+  const validateStep1 = () => {
+    if (!email || !isValidEmail(email)) {
+      alert('올바른 이메일을 입력해주세요');
+      return false;
+    }
+    if (!emailChecked || !emailAvailable) {
+      alert('이메일 중복확인을 해주세요');
+      return false;
+    }
+    if (!password || password.length < 6) {
+      alert('비밀번호는 6자 이상이어야 합니다');
+      return false;
+    }
+    if (password !== passwordConfirm) {
+      alert('비밀번호가 일치하지 않습니다');
+      return false;
+    }
+    return true;
+  };
+
+  // Step 2 검증
+  const validateStep2 = () => {
+    // 모든 필수 필드 검증
+    const missingFields = [];
+
+    if (!photoFile) missingFields.push('프로필 사진');
+    if (!name.trim()) missingFields.push('이름');
+    if (!phone.trim() || phone.replace(/-/g, '').length < 10) missingFields.push('전화번호');
+    if (!birthDate || !isValidBirthDate(birthDate)) missingFields.push('생년월일');
+    if (!gender) missingFields.push('성별');
+    if (!regionId) missingFields.push('거주지역');
+    if (!bankName.trim()) missingFields.push('은행명');
+    if (!bankAccount.trim()) missingFields.push('계좌번호');
+
+    if (missingFields.length > 0) {
+      alert('필수사항을 입력해주세요');
+      return false;
+    }
+    return true;
+  };
+
+  // 다음 단계
+  const handleNextStep = () => {
+    if (validateStep1()) {
+      setStep(2);
+    }
+  };
+
+  // 회원가입 완료
+  const handleRegister = async () => {
+    if (!validateStep2()) return;
+
+    setLoading(true);
+    try {
+      // 거주지역 텍스트 생성
+      let residenceText = null;
+      if (regionId) {
+        const region = regions.find(r => r.id === parseInt(regionId));
+        if (region) {
+          residenceText = `${region.sido} ${region.sigungu}`;
+        }
+      }
+
+      const { data } = await authAPI.emailRegister({
+        email,
+        password,
+        name: name.trim(),
+        phone: phone.replace(/-/g, ''),
+        birth_date: birthDate || null,
+        gender: gender || null,
+        residence: residenceText,
+        region_id: regionId ? parseInt(regionId) : null,
+        bank_name: bankName || null,
+        bank_account: bankAccount || null,
+      });
+
+      login(data.access_token, data);
+      await checkAuth();
+
+      // 사진이 있으면 업로드
+      if (photoFile) {
+        try {
+          await workersAPI.uploadPhoto(photoFile);
+        } catch (photoError) {
+          console.error('사진 업로드 실패:', photoError);
+        }
+      }
+
+      alert('회원가입이 완료되었습니다!');
+      navigate('/');
+    } catch (error) {
+      const errorDetail = error.response?.data?.detail;
+      let errorMessage = '회원가입에 실패했습니다';
+      if (typeof errorDetail === 'string') {
+        errorMessage = errorDetail;
+      } else if (Array.isArray(errorDetail)) {
+        errorMessage = errorDetail.map(e => e.msg || e).join(', ');
+      } else if (errorDetail && typeof errorDetail === 'object') {
+        errorMessage = errorDetail.msg || JSON.stringify(errorDetail);
+      }
+      alert(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-white">
+      {/* 헤더 */}
+      <div className="sticky top-0 bg-white border-b z-10">
+        <div className="flex items-center h-14 px-4">
+          <button onClick={() => step === 1 ? navigate('/login') : setStep(1)} className="mr-4">
+            <span className="text-xl">←</span>
+          </button>
+          <h1 className="text-lg font-semibold">회원가입</h1>
+        </div>
+        {/* 진행 표시 */}
+        <div className="flex px-4 pb-3">
+          <div className={`flex-1 h-1 rounded-full mr-1 ${step >= 1 ? 'bg-blue-500' : 'bg-gray-200'}`} />
+          <div className={`flex-1 h-1 rounded-full ${step >= 2 ? 'bg-blue-500' : 'bg-gray-200'}`} />
+        </div>
+      </div>
+
+      <div className="p-6 max-w-md mx-auto">
+        {/* Step 1: 계정 정보 */}
+        {step === 1 && (
+          <div className="space-y-6 animate-fade-in">
+            <div>
+              <h2 className="text-xl font-bold text-gray-900 mb-2">계정 정보 입력</h2>
+              <p className="text-gray-500 text-sm">로그인에 사용할 이메일과 비밀번호를 입력해주세요</p>
+            </div>
+
+            {/* 이메일 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                이메일 <span className="text-red-500">*</span>
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="email"
+                  value={email}
+                  onChange={handleEmailChange}
+                  placeholder="email@example.com"
+                  className="input flex-1"
+                />
+                <button
+                  onClick={checkEmailDuplicate}
+                  disabled={checkingEmail || !email}
+                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl text-sm font-medium whitespace-nowrap disabled:opacity-50"
+                >
+                  {checkingEmail ? '확인중...' : '중복확인'}
+                </button>
+              </div>
+              {emailChecked && (
+                <p className={`text-sm mt-2 ${emailAvailable ? 'text-green-600' : 'text-red-500'}`}>
+                  {emailAvailable ? '✓ 사용 가능한 이메일입니다' : '✗ 이미 사용중인 이메일입니다'}
+                </p>
+              )}
+            </div>
+
+            {/* 비밀번호 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                비밀번호 <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="6자 이상"
+                className="input"
+              />
+            </div>
+
+            {/* 비밀번호 확인 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                비밀번호 확인 <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="password"
+                value={passwordConfirm}
+                onChange={(e) => setPasswordConfirm(e.target.value)}
+                placeholder="비밀번호 재입력"
+                className="input"
+              />
+              {passwordConfirm && password !== passwordConfirm && (
+                <p className="text-sm text-red-500 mt-2">비밀번호가 일치하지 않습니다</p>
+              )}
+              {passwordConfirm && password === passwordConfirm && password.length >= 6 && (
+                <p className="text-sm text-green-600 mt-2">✓ 비밀번호가 일치합니다</p>
+              )}
+            </div>
+
+            <button
+              onClick={handleNextStep}
+              className="btn-primary w-full mt-8"
+            >
+              다음
+            </button>
+
+            <p className="text-center text-sm text-gray-500">
+              이미 계정이 있으신가요?{' '}
+              <button onClick={() => navigate('/login')} className="text-blue-600 font-medium">
+                로그인
+              </button>
+            </p>
+          </div>
+        )}
+
+        {/* Step 2: 프로필 정보 */}
+        {step === 2 && (
+          <div className="space-y-5 animate-fade-in">
+            <div>
+              <h2 className="text-xl font-bold text-gray-900 mb-2">프로필 정보 입력</h2>
+              <p className="text-gray-500 text-sm">근무에 필요한 기본 정보를 입력해주세요</p>
+            </div>
+
+            {/* 프로필 사진 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                프로필 사진 (면접대체용) <span className="text-red-500">*</span>
+              </label>
+              <div className="flex items-center gap-4">
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-20 h-20 rounded-2xl border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer overflow-hidden hover:border-blue-400 transition-colors"
+                >
+                  {compressing ? (
+                    <div className="animate-spin rounded-full h-6 w-6 border-2 border-gray-300 border-t-blue-500"></div>
+                  ) : photoPreview ? (
+                    <img src={photoPreview} alt="미리보기" className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-3xl text-gray-400">📷</span>
+                  )}
+                </div>
+                <div className="flex-1">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={compressing}
+                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl text-sm font-medium"
+                  >
+                    {compressing ? '압축 중...' : photoPreview ? '사진 변경' : '사진 선택'}
+                  </button>
+                  <p className="text-xs text-gray-500 mt-1">면접을 대체하는 사진입니다</p>
+                </div>
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handlePhotoSelect}
+                className="hidden"
+              />
+            </div>
+
+            {/* 이름 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                이름 <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="홍길동"
+                className="input"
+              />
+            </div>
+
+            {/* 전화번호 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                전화번호 <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(formatPhone(e.target.value))}
+                placeholder="010-1234-5678"
+                className="input"
+                maxLength={13}
+              />
+            </div>
+
+            {/* 생년월일 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                생년월일 <span className="text-red-500">*</span>
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={birthDate}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    // 숫자와 하이픈만 허용
+                    const cleaned = val.replace(/[^0-9-]/g, '');
+                    setBirthDate(formatBirthDate(cleaned));
+                  }}
+                  placeholder="19900101"
+                  className="input flex-1"
+                  maxLength={10}
+                  pattern="[0-9]*"
+                />
+                <label className="flex items-center justify-center w-12 h-12 bg-gray-100 rounded-xl cursor-pointer hover:bg-gray-200 transition-colors">
+                  <span className="text-xl">📅</span>
+                  <input
+                    type="date"
+                    value={birthDate}
+                    onChange={(e) => setBirthDate(e.target.value)}
+                    className="sr-only"
+                  />
+                </label>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">숫자 8자리 입력 (예: 19900101) 또는 📅 클릭</p>
+              {birthDate && !isValidBirthDate(birthDate) && (
+                <p className="text-xs text-red-500 mt-1">올바른 생년월일 형식이 아닙니다</p>
+              )}
+            </div>
+
+            {/* 성별 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                성별 <span className="text-red-500">*</span>
+              </label>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setGender('M')}
+                  className={`flex-1 py-3 rounded-xl font-medium transition-all ${
+                    gender === 'M'
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-gray-100 text-gray-700'
+                  }`}
+                >
+                  남성
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGender('F')}
+                  className={`flex-1 py-3 rounded-xl font-medium transition-all ${
+                    gender === 'F'
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-gray-100 text-gray-700'
+                  }`}
+                >
+                  여성
+                </button>
+              </div>
+            </div>
+
+            {/* 거주지역 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                거주지역 <span className="text-red-500">*</span>
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <select
+                  value={selectedSido}
+                  onChange={handleSidoChange}
+                  className="w-full px-4 py-3 border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">시/도 선택</option>
+                  {sidoList.map((sido) => (
+                    <option key={sido} value={sido}>{sido}</option>
+                  ))}
+                </select>
+                <select
+                  value={regionId}
+                  onChange={(e) => setRegionId(e.target.value)}
+                  disabled={!selectedSido}
+                  className="w-full px-4 py-3 border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                >
+                  <option value="">시/군/구 선택</option>
+                  {sigunguList.map((region) => (
+                    <option key={region.id} value={region.id}>{region.sigungu}</option>
+                  ))}
+                </select>
+              </div>
+              {sidoList.length === 0 && (
+                <p className="text-xs text-orange-500 mt-1">
+                  지역 데이터 로딩 중...
+                </p>
+              )}
+            </div>
+
+            {/* 은행 정보 */}
+            <div className="pt-4 border-t">
+              <p className="text-sm font-medium text-gray-700 mb-3">
+                급여 수령 계좌 <span className="text-red-500">*</span>
+              </p>
+              <div className="space-y-3">
+                <input
+                  type="text"
+                  value={bankName}
+                  onChange={(e) => setBankName(e.target.value)}
+                  placeholder="은행명 (예: 신한은행)"
+                  className="input"
+                />
+                <input
+                  type="text"
+                  value={bankAccount}
+                  onChange={(e) => setBankAccount(e.target.value)}
+                  placeholder="계좌번호"
+                  className="input"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-4">
+              <button
+                onClick={() => setStep(1)}
+                className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium"
+              >
+                이전
+              </button>
+              <button
+                onClick={handleRegister}
+                disabled={loading}
+                className="flex-1 btn-primary"
+              >
+                {loading ? '가입 중...' : '가입 완료'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

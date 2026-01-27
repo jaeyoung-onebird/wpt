@@ -175,6 +175,60 @@ class PolygonChain:
         except Exception:
             return False
 
+    def verify_log_exists(self, log_hash: str) -> Dict:
+        """
+        블록체인에서 로그 존재 여부 검증
+
+        Args:
+            log_hash: 로그 해시 (hex string)
+
+        Returns:
+            dict: {"exists": bool, "error": str}
+        """
+        if not self.enabled:
+            return {"exists": False, "error": "Blockchain not configured"}
+
+        try:
+            log_hash_bytes = bytes.fromhex(log_hash.replace('0x', ''))
+            exists = self.contract.functions.logExists(log_hash_bytes).call()
+            return {"exists": exists, "error": None}
+        except Exception as e:
+            logger.error(f"Failed to verify log: {e}")
+            return {"exists": False, "error": str(e)}
+
+    def get_work_log(self, log_hash: str) -> Dict:
+        """
+        블록체인에서 근무 로그 조회
+
+        Args:
+            log_hash: 로그 해시 (hex string)
+
+        Returns:
+            dict: {"success": bool, "data": {...}, "error": str}
+        """
+        if not self.enabled:
+            return {"success": False, "error": "Blockchain not configured"}
+
+        try:
+            log_hash_bytes = bytes.fromhex(log_hash.replace('0x', ''))
+            result = self.contract.functions.getWorkLog(log_hash_bytes).call()
+
+            # result: (logHash, eventId, workerUidHash, anchoredBy, timestamp)
+            return {
+                "success": True,
+                "data": {
+                    "log_hash": result[0].hex(),
+                    "event_id": result[1],
+                    "worker_uid_hash": result[2].hex(),
+                    "anchored_by": result[3],
+                    "timestamp": result[4]
+                },
+                "error": None
+            }
+        except Exception as e:
+            logger.error(f"Failed to get work log: {e}")
+            return {"success": False, "error": str(e)}
+
 
 # 싱글톤 인스턴스
 polygon_chain = PolygonChain()

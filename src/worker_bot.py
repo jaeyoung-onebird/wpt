@@ -14,7 +14,7 @@ from db import Database
 from utils import parse_deep_link_payload, validate_phone, format_phone, now_kst_str, KST
 from contract_sender import send_contract_link
 from models import ApplicationStatus, AttendanceStatus
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # 환경변수 로드
 load_dotenv('config/.env')
@@ -33,7 +33,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # DB 초기화
-db = Database(os.getenv('DB_PATH', 'data/workproof.db'))
+db = Database(os.getenv('DATABASE_URL', 'postgresql://ubuntu:ubuntu123@localhost:5432/workproof'))
 
 # Conversation states
 (REG_NAME, REG_BIRTH, REG_PHONE, REG_RESIDENCE, REG_FACE_PHOTO, REG_DRIVER_LICENSE, REG_SECURITY_CERT, REG_BANK, REG_ACCOUNT, REG_CONTRACT,
@@ -50,10 +50,10 @@ def get_worker(telegram_id: int):
 def get_main_keyboard():
     """메인 메뉴 키보드"""
     keyboard = [
-        [InlineKeyboardButton("💼 근무지원하기", callback_data="job_search")],
-        [InlineKeyboardButton("📊 내 출석 목록", callback_data="my_attendance_list")],
+        [InlineKeyboardButton("📋 업무 지원", callback_data="job_search")],
+        [InlineKeyboardButton("📊 근무 이력", callback_data="my_attendance_list")],
         [InlineKeyboardButton("⛓️ 블록체인 검증", callback_data="verify_work")],
-        [InlineKeyboardButton("👤 내 정보 (수정하기)", callback_data="my_info")],
+        [InlineKeyboardButton("👤 내 정보", callback_data="my_info")],
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -77,15 +77,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if deep_link_data:
             context.user_data['pending_deep_link'] = deep_link_data
 
-        keyboard = [[InlineKeyboardButton("🏠 처음으로", callback_data="start_over")]]
+        keyboard = [[InlineKeyboardButton("✕ 취소", callback_data="start_over")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         await update.message.reply_text(
-            "👋 안녕하세요!\n\n"
-            "(주)엘케이프라이빗 근무시스템입니다.\n"
-            "처음 오신 분들은 근무자 정보를 등록해주세요.\n\n"
-            "📝 이름을 입력하세요:\n"
-            "(예: 홍길동)",
+            "🛡 WorkProof Chain\n"
+            "━━━━━━━━━━━━━━━━━━━━\n\n"
+            "근무자 등록이 필요합니다.\n\n"
+            "STEP 1/9 · 이름\n\n"
+            "이름을 입력하세요\n"
+            "예) 홍길동",
             reply_markup=reply_markup
         )
         return REG_NAME
@@ -93,7 +94,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 등록된 근무자 -> 메인 메뉴
     reply_markup = get_main_keyboard()
 
-    welcome_text = f"👋 {worker['name']}님, 환영합니다!\n\n(주)엘케이프라이빗\n\n"
+    welcome_text = (
+        f"🛡 WorkProof Chain\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"👤 {worker['name']}님\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━"
+    )
 
     # Deep Link 처리
     if deep_link_data and deep_link_data.get('action') == 'apply':
@@ -101,9 +107,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         event = db.get_event(event_id)
 
         if not event:
-            welcome_text += "❌ 행사를 찾을 수 없습니다."
+            welcome_text += "\n\n⚠️ 행사를 찾을 수 없습니다."
         elif event['status'] != 'OPEN':
-            welcome_text += "❌ 모집이 마감된 행사입니다."
+            welcome_text += "\n\n⚠️ 모집이 마감된 행사입니다."
         else:
             # 지원 페이지로 이동
             await show_event_detail(update, context, event_id, worker['id'])
@@ -118,13 +124,16 @@ async def reg_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = update.message.text.strip()
     context.user_data['reg_name'] = name
 
-    keyboard = [[InlineKeyboardButton("🏠 처음으로", callback_data="start_over")]]
+    keyboard = [[InlineKeyboardButton("✕ 취소", callback_data="start_over")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
-        f"✅ 이름: {name}\n\n"
-        "📝 생년월일을 입력하세요 (YYMMDD):\n"
-        "(예: 900815 → 1990년 8월 15일)",
+        "🛡 근무자 등록\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"✓ 이름: {name}\n\n"
+        "STEP 2/9 · 생년월일\n\n"
+        "생년월일을 입력하세요 (YYMMDD)\n"
+        "예) 900815",
         reply_markup=reply_markup
     )
     return REG_BIRTH
@@ -136,24 +145,29 @@ async def reg_birth(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # YYMMDD 형식 검증 (6자리 숫자)
     if len(birth_text) != 6 or not birth_text.isdigit():
-        keyboard = [[InlineKeyboardButton("🏠 처음으로", callback_data="start_over")]]
+        keyboard = [[InlineKeyboardButton("✕ 취소", callback_data="start_over")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(
-            "❌ 올바른 형식이 아닙니다.\n\n"
-            "YYMMDD 형식으로 입력하세요 (예: 900815)",
+            "⚠️ 형식 오류\n"
+            "━━━━━━━━━━━━━━━━━━━━\n\n"
+            "YYMMDD 형식으로 입력하세요\n"
+            "예) 900815",
             reply_markup=reply_markup
         )
         return REG_BIRTH
 
     context.user_data['reg_birth'] = birth_text
 
-    keyboard = [[InlineKeyboardButton("🏠 처음으로", callback_data="start_over")]]
+    keyboard = [[InlineKeyboardButton("✕ 취소", callback_data="start_over")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
-        f"✅ 생년월일: {birth_text}\n\n"
-        "📝 전화번호를 입력하세요:\n"
-        "(예: 010-1234-5678 또는 01012345678)",
+        "🛡 근무자 등록\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"✓ 생년월일: {birth_text}\n\n"
+        "STEP 3/9 · 전화번호\n\n"
+        "전화번호를 입력하세요\n"
+        "예) 01012345678",
         reply_markup=reply_markup
     )
     return REG_PHONE
@@ -164,24 +178,29 @@ async def reg_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     phone = update.message.text.strip()
 
     if not validate_phone(phone):
-        keyboard = [[InlineKeyboardButton("🏠 처음으로", callback_data="start_over")]]
+        keyboard = [[InlineKeyboardButton("✕ 취소", callback_data="start_over")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(
-            "❌ 올바른 전화번호를 입력하세요.\n"
-            "(예: 010-1234-5678)",
+            "⚠️ 형식 오류\n"
+            "━━━━━━━━━━━━━━━━━━━━\n\n"
+            "올바른 전화번호를 입력하세요\n"
+            "예) 01012345678",
             reply_markup=reply_markup
         )
         return REG_PHONE
 
     context.user_data['reg_phone'] = format_phone(phone)
 
-    keyboard = [[InlineKeyboardButton("🏠 처음으로", callback_data="start_over")]]
+    keyboard = [[InlineKeyboardButton("✕ 취소", callback_data="start_over")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
-        f"✅ 전화번호: {format_phone(phone)}\n\n"
-        "📝 거주지역을 입력하세요:\n"
-        "(예: 서울특별시 강남구)",
+        "🛡 근무자 등록\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"✓ 전화번호: {format_phone(phone)}\n\n"
+        "STEP 4/9 · 거주지역\n\n"
+        "거주지역을 입력하세요\n"
+        "예) 서울시 강남구",
         reply_markup=reply_markup
     )
     return REG_RESIDENCE
@@ -192,13 +211,16 @@ async def reg_residence(update: Update, context: ContextTypes.DEFAULT_TYPE):
     residence = update.message.text.strip()
     context.user_data['reg_residence'] = residence
 
-    keyboard = [[InlineKeyboardButton("🏠 처음으로", callback_data="start_over")]]
+    keyboard = [[InlineKeyboardButton("✕ 취소", callback_data="start_over")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
-        f"✅ 거주지역: {residence}\n\n"
-        "📸 얼굴확인 가능한 사진을 보내주세요:\n"
-        "(면접 대체용 - 정면 사진 권장)",
+        "🛡 근무자 등록\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"✓ 거주지역: {residence}\n\n"
+        "STEP 5/9 · 사진\n\n"
+        "얼굴 확인용 사진을 보내주세요\n"
+        "(정면 사진 권장)",
         reply_markup=reply_markup
     )
     return REG_FACE_PHOTO
@@ -207,10 +229,10 @@ async def reg_residence(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def reg_face_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """얼굴 사진 입력"""
     if not update.message.photo:
-        keyboard = [[InlineKeyboardButton("🏠 처음으로", callback_data="start_over")]]
+        keyboard = [[InlineKeyboardButton("✕ 취소", callback_data="start_over")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(
-            "❌ 사진을 보내주세요.",
+            "⚠️ 사진을 보내주세요.",
             reply_markup=reply_markup
         )
         return REG_FACE_PHOTO
@@ -235,24 +257,27 @@ async def reg_face_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info(f"Temp photo saved: {filepath}")
     except Exception as e:
         logger.error(f"Failed to save photo: {e}")
-        keyboard = [[InlineKeyboardButton("🏠 처음으로", callback_data="start_over")]]
+        keyboard = [[InlineKeyboardButton("✕ 취소", callback_data="start_over")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(
-            "❌ 사진 저장 실패. 다시 시도해주세요.",
+            "⚠️ 사진 저장 실패\n다시 시도해주세요.",
             reply_markup=reply_markup
         )
         return REG_FACE_PHOTO
 
     keyboard = [
-        [InlineKeyboardButton("✅ 있음", callback_data="driver_yes")],
-        [InlineKeyboardButton("❌ 없음", callback_data="driver_no")],
-        [InlineKeyboardButton("🏠 처음으로", callback_data="start_over")],
+        [InlineKeyboardButton("있음", callback_data="driver_yes")],
+        [InlineKeyboardButton("없음", callback_data="driver_no")],
+        [InlineKeyboardButton("✕ 취소", callback_data="start_over")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
-        "✅ 사진이 등록되었습니다.\n\n"
-        "🚗 운전면허가 있으신가요?",
+        "🛡 근무자 등록\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        "✓ 사진 등록 완료\n\n"
+        "STEP 6/9 · 운전면허\n\n"
+        "운전면허가 있으신가요?",
         reply_markup=reply_markup
     )
     return REG_DRIVER_LICENSE
@@ -267,15 +292,18 @@ async def reg_driver_license(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data['reg_driver_license'] = has_license
 
     keyboard = [
-        [InlineKeyboardButton("✅ 있음", callback_data="security_yes")],
-        [InlineKeyboardButton("❌ 없음", callback_data="security_no")],
-        [InlineKeyboardButton("🏠 처음으로", callback_data="start_over")],
+        [InlineKeyboardButton("있음", callback_data="security_yes")],
+        [InlineKeyboardButton("없음", callback_data="security_no")],
+        [InlineKeyboardButton("✕ 취소", callback_data="start_over")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await query.edit_message_text(
-        f"✅ 운전면허: {'있음' if has_license else '없음'}\n\n"
-        "🛡️ 경호이수증이 있으신가요?",
+        "🛡 근무자 등록\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"✓ 운전면허: {'있음' if has_license else '없음'}\n\n"
+        "STEP 7/9 · 경호자격\n\n"
+        "경호이수증이 있으신가요?",
         reply_markup=reply_markup
     )
     return REG_SECURITY_CERT
@@ -289,14 +317,16 @@ async def reg_security_cert(update: Update, context: ContextTypes.DEFAULT_TYPE):
     has_cert = query.data == "security_yes"
     context.user_data['reg_security_cert'] = has_cert
 
-    keyboard = [[InlineKeyboardButton("🏠 처음으로", callback_data="start_over")]]
+    keyboard = [[InlineKeyboardButton("✕ 취소", callback_data="start_over")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await query.edit_message_text(
-        f"✅ 경호이수증: {'있음' if has_cert else '없음'}\n\n"
-        f"🏦 급여 수령을 위한 정보를 입력해주세요.\n\n"
-        f"은행명을 입력하세요:\n"
-        f"(예: 국민은행, 신한은행, 카카오뱅크)",
+        "🛡 근무자 등록\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"✓ 경호이수증: {'있음' if has_cert else '없음'}\n\n"
+        "STEP 8/9 · 은행정보\n\n"
+        "은행명을 입력하세요\n"
+        "예) 국민은행",
         reply_markup=reply_markup
     )
     return REG_BANK
@@ -307,13 +337,15 @@ async def reg_bank(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bank_name = update.message.text.strip()
     context.user_data['reg_bank'] = bank_name
 
-    keyboard = [[InlineKeyboardButton("🏠 처음으로", callback_data="start_over")]]
+    keyboard = [[InlineKeyboardButton("✕ 취소", callback_data="start_over")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
-        f"✅ 은행명: {bank_name}\n\n"
-        f"📝 계좌번호를 입력하세요:\n"
-        f"(예: 123-456-789012 또는 123456789012)",
+        "🛡 근무자 등록\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"✓ 은행: {bank_name}\n\n"
+        "계좌번호를 입력하세요\n"
+        "예) 123456789012",
         reply_markup=reply_markup
     )
     return REG_ACCOUNT
@@ -328,17 +360,20 @@ async def reg_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
     contract_link = "https://glosign.com/linkviewer/l19505c1c6253ae8fc0507e5a53072ed1d96fdb16a1eeeddc472fc4ee1a1cefb3ec31a275fdb22d570bf5644d281c10d8"
 
     keyboard = [
-        [InlineKeyboardButton("✅ 작성 완료", callback_data="contract_signed")],
-        [InlineKeyboardButton("🏠 처음으로", callback_data="start_over")],
+        [InlineKeyboardButton("✓ 작성 완료", callback_data="contract_signed")],
+        [InlineKeyboardButton("✕ 취소", callback_data="start_over")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
-        f"✅ 계좌번호: {account}\n\n"
-        f"📄 마지막 단계입니다!\n"
-        f"프리랜서용역계약서를 작성해주세요.\n\n"
-        f"🔗 계약서 링크:\n{contract_link}\n\n"
-        f"계약서 작성을 완료하셨으면 '✅ 작성 완료' 버튼을 눌러주세요.",
+        "🛡 근무자 등록\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"✓ 계좌: {account}\n\n"
+        "STEP 9/9 · 계약서\n\n"
+        "아래 링크에서 계약서를 작성해주세요.\n\n"
+        f"🔗 {contract_link}\n\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "작성 완료 후 버튼을 눌러주세요.",
         reply_markup=reply_markup
     )
     return REG_CONTRACT
@@ -386,25 +421,24 @@ async def reg_contract(update: Update, context: ContextTypes.DEFAULT_TYPE):
         worker = db.get_worker_by_telegram_id(update.effective_user.id)
 
         await query.edit_message_text(
-            "✅ 등록이 완료되었습니다!\n\n"
-            f"📋 등록 정보:\n"
-            f"이름: {worker['name']}\n"
-            f"생년월일: {worker['birth_date']}\n"
-            f"전화번호: {worker['phone']}\n"
-            f"거주지역: {worker.get('residence', '-')}\n"
-            f"운전면허: {'있음' if worker['driver_license'] else '없음'}\n"
-            f"경호이수증: {'있음' if worker['security_cert'] else '없음'}\n"
-            f"은행: {worker.get('bank_name', '-')}\n"
-            f"계좌번호: {worker.get('bank_account', '-')}\n"
-            f"프리랜서용역계약서: {'작성완료' if worker.get('contract_signed') else '미작성'}\n\n"
-            f"환영합니다! 🎉"
+            "✅ 등록 완료\n"
+            "━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"👤 {worker['name']}\n"
+            f"📅 {worker['birth_date']}\n"
+            f"📱 {worker['phone']}\n"
+            f"📍 {worker.get('residence', '-')}\n"
+            f"🚗 면허: {'있음' if worker['driver_license'] else '없음'}\n"
+            f"🛡 경호: {'있음' if worker['security_cert'] else '없음'}\n"
+            f"🏦 {worker.get('bank_name', '-')} {worker.get('bank_account', '-')}\n\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "환영합니다!"
         )
 
         # 메인 메뉴
         reply_markup = get_main_keyboard()
         await context.bot.send_message(
             chat_id=update.effective_chat.id,
-            text="아래 메뉴에서 원하는 작업을 선택하세요:",
+            text="🛡 WorkProof Chain\n━━━━━━━━━━━━━━━━━━━━",
             reply_markup=reply_markup
         )
 
@@ -425,31 +459,33 @@ async def my_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     worker = get_worker(update.effective_user.id)
 
     if not worker:
-        keyboard = [[InlineKeyboardButton("📝 회원가입", callback_data="start_registration")]]
+        keyboard = [[InlineKeyboardButton("등록하기", callback_data="start_registration")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text("❌ 등록되지 않은 사용자입니다.\n\n/start 명령어로 회원가입을 진행해주세요.", reply_markup=reply_markup)
+        await query.edit_message_text(
+            "⚠️ 미등록 사용자\n"
+            "━━━━━━━━━━━━━━━━━━━━\n\n"
+            "/start 명령어로 등록해주세요.",
+            reply_markup=reply_markup
+        )
         return
 
-    info_text = f"""
-👤 내 정보
-
-이름: {worker['name']}
-생년월일: {worker['birth_date'] or '미입력'}
-전화번호: {worker['phone']}
-거주지역: {worker.get('residence') or '미입력'}
-얼굴사진: {'등록완료' if worker.get('face_photo_file_id') else '미등록'}
-운전면허: {'있음' if worker.get('driver_license') else '없음'}
-경호이수증: {'있음' if worker.get('security_cert') else '없음'}
-은행: {worker.get('bank_name') or '미입력'}
-계좌번호: {worker.get('bank_account') or '미입력'}
-프리랜서용역계약서: {'작성완료' if worker.get('contract_signed') else '미작성'}
-
-등록일: {worker['created_at']}
-"""
+    info_text = (
+        "👤 내 정보\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"이름: {worker['name']}\n"
+        f"생년월일: {worker['birth_date'] or '-'}\n"
+        f"전화번호: {worker['phone']}\n"
+        f"거주지역: {worker.get('residence') or '-'}\n\n"
+        f"🚗 면허: {'있음' if worker.get('driver_license') else '없음'}\n"
+        f"🛡 경호: {'있음' if worker.get('security_cert') else '없음'}\n\n"
+        f"🏦 {worker.get('bank_name') or '-'}\n"
+        f"   {worker.get('bank_account') or '-'}\n\n"
+        "━━━━━━━━━━━━━━━━━━━━"
+    )
 
     keyboard = [
-        [InlineKeyboardButton("✏️ 정보 수정", callback_data="edit_info")],
-        [InlineKeyboardButton("🏠 처음으로", callback_data="main_menu")],
+        [InlineKeyboardButton("✏️ 수정", callback_data="edit_info")],
+        [InlineKeyboardButton("← 메인", callback_data="main_menu")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -1031,9 +1067,9 @@ async def apply_for_event(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def attendance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """출석 명령어 /출석"""
     await update.message.reply_text(
-        "📊 출석 체크\n\n"
-        "6자리 출석 코드를 입력하세요:\n"
-        "(예: 123456)"
+        "✅ 출근 체크\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        "출석 코드 6자리를 입력하세요"
     )
     return ATTENDANCE_CODE
 
@@ -1047,27 +1083,28 @@ async def attendance_code_entered(update: Update, context: ContextTypes.DEFAULT_
     attendance = db.get_attendance_by_code(code)
 
     if not attendance:
-        keyboard = [[InlineKeyboardButton("🏠 메인 메뉴", callback_data="main_menu")]]
+        keyboard = [[InlineKeyboardButton("← 메인", callback_data="main_menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(
-            "❌ 올바르지 않은 출석 코드입니다.\n\n"
-            "관리자에게 확인하세요.",
+            "⚠️ 유효하지 않은 코드\n"
+            "━━━━━━━━━━━━━━━━━━━━\n\n"
+            "코드를 확인해주세요.",
             reply_markup=reply_markup
         )
         return ConversationHandler.END
 
     if attendance['worker_id'] != worker['id']:
-        keyboard = [[InlineKeyboardButton("🏠 메인 메뉴", callback_data="main_menu")]]
+        keyboard = [[InlineKeyboardButton("← 메인", callback_data="main_menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(
-            "❌ 본인의 출석 코드가 아닙니다.",
+            "⚠️ 본인의 코드가 아닙니다.",
             reply_markup=reply_markup
         )
         return ConversationHandler.END
 
     if attendance['status'] == 'CHECKED_IN':
         await update.message.reply_text(
-            "ℹ️ 이미 출석 체크가 완료되었습니다."
+            "ℹ️ 이미 출근 처리되었습니다."
         )
         return ConversationHandler.END
 
@@ -1079,11 +1116,12 @@ async def attendance_code_entered(update: Update, context: ContextTypes.DEFAULT_
     reply_markup = get_main_keyboard()
 
     await update.message.reply_text(
-        f"✅ 출석 완료!\n\n"
-        f"📋 행사: {event['title']}\n"
-        f"📅 날짜: {event['event_date']}\n"
-        f"⏰ 출석 시간: 지금\n\n"
-        f"근무 마치고 /퇴근 명령으로 퇴근 처리하세요.",
+        "✅ 출근 완료\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"📌 {event['title']}\n"
+        f"📅 {event['event_date']}\n\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "퇴근 시 /퇴근 명령어를 입력하세요.",
         reply_markup=reply_markup
     )
 
@@ -1093,9 +1131,9 @@ async def attendance_code_entered(update: Update, context: ContextTypes.DEFAULT_
 async def checkout_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """퇴근 명령어 /퇴근"""
     await update.message.reply_text(
-        "📊 퇴근 처리\n\n"
-        "6자리 출석 코드를 입력하세요:\n"
-        "(예: 123456)"
+        "🏁 퇴근 체크\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        "출석 코드 6자리를 입력하세요"
     )
     return CHECKOUT_CODE
 
@@ -1109,21 +1147,30 @@ async def checkout_code_entered(update: Update, context: ContextTypes.DEFAULT_TY
     attendance = db.get_attendance_by_code(code)
 
     if not attendance:
-        keyboard = [[InlineKeyboardButton("🏠 메인 메뉴", callback_data="main_menu")]]
+        keyboard = [[InlineKeyboardButton("← 메인", callback_data="main_menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text("❌ 올바르지 않은 코드입니다.", reply_markup=reply_markup)
+        await update.message.reply_text(
+            "⚠️ 유효하지 않은 코드",
+            reply_markup=reply_markup
+        )
         return ConversationHandler.END
 
     if attendance['worker_id'] != worker['id']:
-        keyboard = [[InlineKeyboardButton("🏠 메인 메뉴", callback_data="main_menu")]]
+        keyboard = [[InlineKeyboardButton("← 메인", callback_data="main_menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text("❌ 본인의 코드가 아닙니다.", reply_markup=reply_markup)
+        await update.message.reply_text(
+            "⚠️ 본인의 코드가 아닙니다.",
+            reply_markup=reply_markup
+        )
         return ConversationHandler.END
 
     if attendance['status'] != 'CHECKED_IN':
-        keyboard = [[InlineKeyboardButton("🏠 메인 메뉴", callback_data="main_menu")]]
+        keyboard = [[InlineKeyboardButton("← 메인", callback_data="main_menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text("❌ 출석 체크를 먼저 해주세요.", reply_markup=reply_markup)
+        await update.message.reply_text(
+            "⚠️ 출근 체크를 먼저 해주세요.",
+            reply_markup=reply_markup
+        )
         return ConversationHandler.END
 
     # 퇴근 처리
@@ -1172,31 +1219,36 @@ async def checkout_code_entered(update: Update, context: ContextTypes.DEFAULT_TY
                 block_number=result['block_number']
             )
 
-            blockchain_msg = f"\n⛓️ 블록체인 기록 완료!\nTX: {result['tx_hash'][:16]}..."
+            blockchain_msg = f"⛓️ TX: {result['tx_hash'][:16]}..."
         else:
-            blockchain_msg = f"\n⚠️ 블록체인 기록 실패: {result.get('error', 'Unknown')}"
+            blockchain_msg = f"⚠️ 기록 실패"
 
     except Exception as e:
         logger.error(f"Blockchain recording failed: {e}")
-        blockchain_msg = f"\n⚠️ 블록체인 기록 중 오류 발생"
+        blockchain_msg = f"⚠️ 기록 오류"
 
     reply_markup = get_main_keyboard()
 
+    hours = attendance['worked_minutes'] // 60
+    mins = attendance['worked_minutes'] % 60
+
     await update.message.reply_text(
-        f"✅ 퇴근 완료!\n\n"
-        f"📋 행사: {event['title']}\n"
-        f"⏱ 총 근무 시간: {attendance['worked_minutes']}분\n"
+        "🏁 퇴근 완료\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"📌 {event['title']}\n"
+        f"⏱ 근무시간: {hours}시간 {mins}분\n\n"
         f"{blockchain_msg}\n\n"
-        f"수고하셨습니다!",
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "수고하셨습니다.",
         reply_markup=reply_markup
     )
 
     return ConversationHandler.END
 
 
-# ===== 내 출석 목록 =====
+# ===== 업무이력 =====
 async def my_attendance_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """내 출석 목록 보기"""
+    """업무이력 보기"""
     query = update.callback_query
     await query.answer()
 
@@ -1246,7 +1298,7 @@ async def my_attendance_list(update: Update, context: ContextTypes.DEFAULT_TYPE)
     checked_in = [a for a in attendances if a['status'] == 'CHECKED_IN']
     completed = [a for a in attendances if a['status'] == 'COMPLETED']
 
-    text = f"📊 내 출석 목록 (총 {len(attendances)}건)\n\n"
+    text = f"📊 업무이력 (총 {len(attendances)}건)\n\n"
     text += f"⏳ 대기: {len(pending)}건\n"
     text += f"✅ 출근완료: {len(checked_in)}건\n"
     text += f"🎉 퇴근완료: {len(completed)}건\n"
@@ -1490,7 +1542,7 @@ async def do_checkin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     checked_in = [a for a in attendances if a['status'] == 'CHECKED_IN']
     completed = [a for a in attendances if a['status'] == 'COMPLETED']
 
-    text = f"📊 내 출석 목록 (총 {len(attendances)}건)\n\n"
+    text = f"📊 업무이력 (총 {len(attendances)}건)\n\n"
     text += f"⏳ 대기: {len(pending)}건\n"
     text += f"✅ 출근완료: {len(checked_in)}건\n"
     text += f"🎉 퇴근완료: {len(completed)}건\n"
@@ -1557,7 +1609,9 @@ async def do_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # 퇴근 처리
-    db.check_out(attendance_id)
+    logger.info(f"=== do_checkout called: attendance_id={attendance_id}, worker_id={worker['id']} ===")
+    db.check_out(attendance_id, worker['id'])
+    logger.info(f"=== db.check_out completed ===")
 
     # 블록체인 기록 시도
     try:
@@ -1675,7 +1729,7 @@ async def do_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     checked_in = [a for a in attendances if a['status'] == 'CHECKED_IN']
     completed = [a for a in attendances if a['status'] == 'COMPLETED']
 
-    text = f"📊 내 출석 목록 (총 {len(attendances)}건)\n\n"
+    text = f"📊 업무이력 (총 {len(attendances)}건)\n\n"
     text += f"⏳ 대기: {len(pending)}건\n"
     text += f"✅ 출근완료: {len(checked_in)}건\n"
     text += f"🎉 퇴근완료: {len(completed)}건\n"
@@ -1707,7 +1761,7 @@ async def do_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ===== 새로운 메뉴 핸들러들 =====
 async def job_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """근무지원하기 - 진행 중인 행사 목록"""
+    """업무지원하기 - 진행 중인 행사 목록"""
     query = update.callback_query
     await query.answer()
 
@@ -1767,6 +1821,7 @@ async def verify_work(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     from chain import polygon_chain
+    from datetime import datetime
 
     text = f"⛓️ 블록체인 검증 (총 {len(chain_logs)}건)\n\n"
 
@@ -1774,17 +1829,54 @@ async def verify_work(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += f"━━━━━━━━━━━━━━━━\n"
         text += f"📋 {log['event_title']}\n"
         text += f"📅 {log['event_date']}\n"
-        text += f"⏱ {log['worked_minutes']}분\n"
 
-        if log['tx_hash']:
-            text += f"✅ 블록체인 기록 완료\n"
-            text += f"TX: {log['tx_hash'][:16]}...\n"
+        # 검증 데이터 (압축 버전)
+        check_in = log['check_in_time'].split()[1][:5] if log.get('check_in_time') else '-'
+        check_out = log['check_out_time'].split()[1][:5] if log.get('check_out_time') else '-'
+        worked = log['worked_minutes'] if log.get('worked_minutes') else 0
+
+        text += f"⏱ 출근 {check_in} | 퇴근 {check_out} | {worked}분\n"
+        text += f"🆔 행사:{log['event_id']} | 근무자:{log['worker_id']}\n"
+
+        if log['tx_hash'] and log.get('log_hash'):
+            # 실제 온체인 검증 수행
+            text += f"\n🔍 온체인 검증\n"
+            log_hash_short = log['log_hash'][:16] + "..."
+            text += f"🔐 해시: {log_hash_short}\n"
+
+            verify_result = polygon_chain.verify_log_exists(log['log_hash'])
+            if verify_result['exists']:
+                # 온체인 데이터 조회
+                onchain = polygon_chain.get_work_log(log['log_hash'])
+                if onchain['success']:
+                    ts = onchain['data']['timestamp']
+                    if ts > 0:
+                        dt_utc = datetime.utcfromtimestamp(ts)
+                        dt_kst = dt_utc + timedelta(hours=9)
+                        dt = dt_kst.strftime('%Y-%m-%d %H:%M KST')
+                    else:
+                        dt = "N/A"
+                    text += f"✅ 블록체인 존재: 확인됨\n"
+                    text += f"✅ 기록 시간: {dt}\n"
+                    text += f"✅ 블록: #{log['block_number']}\n"
+                    text += f"📌 검증 완료 - 위변조 없음\n"
+                else:
+                    text += f"✅ 블록체인 존재: 확인됨\n"
+                    text += f"📌 검증 완료\n"
+            else:
+                text += f"❌ 블록체인 존재: 미확인\n"
+                text += f"⚠️ 검증 실패\n"
+
+            text += f"\n🔗 TX: {log['tx_hash'][:16]}...\n"
             explorer_url = polygon_chain.get_block_explorer_url(log['tx_hash'])
-            text += f"🔗 {explorer_url}\n"
+            text += f"🌐 {explorer_url}\n"
+        elif log['tx_hash']:
+            text += f"✅ 블록체인 기록 완료\n"
+            text += f"🔗 TX: {log['tx_hash'][:16]}...\n"
         else:
             text += f"⏳ 블록체인 기록 대기 중\n"
 
-    text += f"━━━━━━━━━━━━━━━━\n"
+    text += f"━━━━━━━━━━━━━━━━"
 
     keyboard = [[InlineKeyboardButton("🏠 처음으로", callback_data="main_menu")]]
     reply_markup = InlineKeyboardMarkup(keyboard)

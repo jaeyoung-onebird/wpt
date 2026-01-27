@@ -3,22 +3,23 @@
 """
 import os
 import logging
+from dotenv import load_dotenv
+
+# 환경변수 먼저 로드 (다른 모듈 import 전에!)
+load_dotenv('config/.env')
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler,
     ContextTypes, ConversationHandler, filters
 )
-from dotenv import load_dotenv
 
 from db import Database
 from parser import EventParser
-from utils import generate_short_code, generate_deep_link, generate_check_in_code, now_kst_str, KST
+from utils import generate_short_code, generate_deep_link, generate_check_in_code, now_kst_str, now_kst, KST
 from payroll import PayrollExporter
 from models import ApplicationStatus, EventStatus
 from chain import polygon_chain
-
-# 환경변수 로드
-load_dotenv('config/.env')
 
 # 로깅 설정 (한국 시간 UTC+9)
 import time
@@ -34,7 +35,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # DB 초기화
-db = Database(os.getenv('DB_PATH', 'data/workproof.db'))
+db = Database(os.getenv('DATABASE_URL', 'postgresql://ubuntu:ubuntu123@localhost:5432/workproof'))
 
 # 파서 초기화
 event_parser = EventParser()
@@ -60,60 +61,28 @@ def is_admin(user_id: int) -> bool:
 
 
 async def require_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    """관리자 권한 필수 데코레이터"""
+    """관리자 권한 확인 - 링크 접속 시 자동 등록"""
     user_id = update.effective_user.id
     if not is_admin(user_id):
-        # 이미 요청 중인지 확인
-        existing_request = db.get_pending_admin_request(user_id)
-        if existing_request:
-            await update.message.reply_text(
-                "⏳ 관리자 승인 대기 중입니다.\n\n"
-                "관리자의 승인을 기다려주세요."
-            )
-            return False
-
-        # 신규 승인 요청 생성
+        # 승인 없이 바로 관리자로 등록
         user = update.effective_user
         username = user.username if user.username else ""
-        first_name = user.first_name if user.first_name else ""
-        last_name = user.last_name if user.last_name else ""
-        full_name = f"{first_name} {last_name}".strip()
 
-        created = db.create_admin_request(user_id, username, first_name, last_name)
-
-        if created:
-            # 메인 관리자에게 알림 발송
-            main_admin_id = db.get_main_admin_id()
-            if main_admin_id:
-                keyboard = [
-                    [
-                        InlineKeyboardButton("✅ 승인", callback_data=f"approve_admin_{user_id}"),
-                        InlineKeyboardButton("❌ 거부", callback_data=f"reject_admin_{user_id}")
-                    ]
-                ]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-
-                try:
-                    await context.bot.send_message(
-                        chat_id=main_admin_id,
-                        text=f"🔔 관리자 승인 요청\n\n"
-                             f"이름: {full_name}\n"
-                             f"아이디: @{username}\n"
-                             f"Telegram ID: {user_id}\n\n"
-                             f"이 사용자에게 관리자 권한을 부여하시겠습니까?",
-                        reply_markup=reply_markup
-                    )
-                except Exception as e:
-                    logger.error(f"Failed to send admin approval request: {e}")
+        try:
+            db.add_admin(user_id, username)
+            logger.info(f"Auto-registered admin: {user_id} (@{username})")
 
             await update.message.reply_text(
-                "📩 관리자 승인을 요청했습니다.\n\n"
-                "관리자의 승인을 기다려주세요."
+                "✅ 관리자 등록 완료\n"
+                "━━━━━━━━━━━━━━━━━━━━\n\n"
+                "관리자 봇을 사용하실 수 있습니다.\n"
+                "다시 /start 명령어를 입력해주세요."
             )
-        else:
+        except Exception as e:
+            logger.error(f"Failed to auto-register admin: {e}")
             await update.message.reply_text(
-                "⏳ 이미 관리자 승인 요청이 접수되었습니다.\n\n"
-                "관리자의 승인을 기다려주세요."
+                "❌ 등록 중 오류가 발생했습니다.\n"
+                "다시 시도해주세요."
             )
 
         return False
@@ -264,20 +233,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         done_att = att_stats['done_count'] if att_stats else 0
 
     keyboard = [
-        [InlineKeyboardButton("➕ 행사 등록", callback_data="event_register")],
-        [InlineKeyboardButton("📋 행사 목록", callback_data="event_list")],
-        [InlineKeyboardButton(f"👥 지원자 관리 (대기 {pending_apps} / 확정 {confirmed_apps})", callback_data="manage_applications")],
+        [InlineKeyboardButton("📋 행사 관리", callback_data="event_list")],
+        [InlineKeyboardButton("➕ 새 행사 등록", callback_data="event_register")],
+        [InlineKeyboardButton(f"👥 지원자 ({pending_apps}대기 / {confirmed_apps}확정)", callback_data="manage_applications")],
+        [InlineKeyboardButton(f"📊 출석 ({pending_att}대기 / {done_att}완료)", callback_data="manage_attendance")],
         [InlineKeyboardButton("👷 근무자 관리", callback_data="manage_workers")],
-        [InlineKeyboardButton(f"📊 출석 관리 (대기 {pending_att} / 완료 {done_att})", callback_data="manage_attendance")],
-        [InlineKeyboardButton("💰 엑셀 다운로드", callback_data="export_payroll")],
-        [InlineKeyboardButton("⛓️ 블록체인", callback_data="blockchain_menu")],
-        [InlineKeyboardButton("📖 도움말", callback_data="help_menu")],
+        [InlineKeyboardButton("📥 정산 다운로드", callback_data="export_payroll")],
+        [InlineKeyboardButton("⛓️ 블록체인 검증", callback_data="blockchain_menu")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
-        "(주)엘케이프라이빗 행사관리\n"
-        "아래 메뉴에서 작업을 선택해주세요.",
+        "🛡 WorkProof Chain 관리자\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"📊 현황\n"
+        f"• 지원자: 대기 {pending_apps} / 확정 {confirmed_apps}\n"
+        f"• 출석: 대기 {pending_att} / 완료 {done_att}\n\n"
+        "━━━━━━━━━━━━━━━━━━━━",
         reply_markup=reply_markup
     )
 
@@ -291,11 +263,14 @@ async def event_register_start(update: Update, context: ContextTypes.DEFAULT_TYP
     # 초기화
     context.user_data['event_data'] = {}
 
+    keyboard = [[InlineKeyboardButton("✕ 취소", callback_data="event_cancel")]]
     await query.edit_message_text(
-        "📝 행사 등록 (1/8)\n\n"
-        "행사명을 입력하세요:\n"
-        "예시) BMW 시승행사\n\n"
-        "/cancel 로 취소"
+        "📋 새 행사 등록\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        "STEP 1/8 · 행사명\n\n"
+        "행사명을 입력하세요\n"
+        "예) BMW 시승행사",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
     return EVENT_TITLE
@@ -306,9 +281,11 @@ async def event_title_received(update: Update, context: ContextTypes.DEFAULT_TYP
     context.user_data['event_data']['title'] = update.message.text
 
     await update.message.reply_text(
-        "📝 행사 등록 (2/8)\n\n"
-        "날짜를 입력하세요 (MMDD 형식):\n"
-        "예시) 0125 → 01월 25일"
+        "📋 새 행사 등록\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        "STEP 2/8 · 날짜\n\n"
+        "날짜를 입력하세요 (MMDD)\n"
+        "예) 0125 → 01월 25일"
     )
 
     return EVENT_DATE
@@ -321,8 +298,10 @@ async def event_date_received(update: Update, context: ContextTypes.DEFAULT_TYPE
     # MMDD 형식 검증
     if len(date_input) != 4 or not date_input.isdigit():
         await update.message.reply_text(
-            "❌ 잘못된 형식입니다.\n\n"
-            "MMDD 형식으로 입력하세요 (예: 0125)"
+            "⚠️ 형식 오류\n"
+            "━━━━━━━━━━━━━━━━━━━━\n\n"
+            "MMDD 형식으로 입력하세요\n"
+            "예) 0125"
         )
         return EVENT_DATE
 
@@ -336,10 +315,12 @@ async def event_date_received(update: Update, context: ContextTypes.DEFAULT_TYPE
     context.user_data['event_data']['date_raw'] = date_input
 
     await update.message.reply_text(
-        f"📝 행사 등록 (3/8)\n\n"
-        f"날짜: {formatted_date}\n\n"
-        "시작 시간을 입력하세요:\n"
-        "예시) 0900 (09:00)"
+        "📋 새 행사 등록\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"STEP 3/9 · 시작 시간\n\n"
+        f"📅 {formatted_date}\n\n"
+        "시작 시간을 입력하세요 (HHMM)\n"
+        "예) 0900"
     )
 
     return EVENT_START_TIME
@@ -352,8 +333,10 @@ async def event_start_time_received(update: Update, context: ContextTypes.DEFAUL
     # HHMM 형식 검증
     if len(time_input) != 4 or not time_input.isdigit():
         await update.message.reply_text(
-            "❌ 잘못된 형식입니다.\n\n"
-            "HHMM 형식으로 입력하세요 (예: 0900)"
+            "⚠️ 형식 오류\n"
+            "━━━━━━━━━━━━━━━━━━━━\n\n"
+            "HHMM 형식으로 입력하세요\n"
+            "예) 0900"
         )
         return EVENT_START_TIME
 
@@ -366,10 +349,12 @@ async def event_start_time_received(update: Update, context: ContextTypes.DEFAUL
     context.user_data['event_data']['start_time'] = formatted_time
 
     await update.message.reply_text(
-        f"📝 행사 등록 (4/8)\n\n"
-        f"시작: {formatted_time}\n\n"
-        "종료 시간을 입력하세요:\n"
-        "예시) 2100 (21:00)"
+        "📋 새 행사 등록\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"STEP 4/9 · 종료 시간\n\n"
+        f"⏰ 시작: {formatted_time}\n\n"
+        "종료 시간을 입력하세요 (HHMM)\n"
+        "예) 2100"
     )
 
     return EVENT_END_TIME
@@ -382,8 +367,10 @@ async def event_end_time_received(update: Update, context: ContextTypes.DEFAULT_
     # HHMM 형식 검증
     if len(time_input) != 4 or not time_input.isdigit():
         await update.message.reply_text(
-            "❌ 잘못된 형식입니다.\n\n"
-            "HHMM 형식으로 입력하세요 (예: 2100)"
+            "⚠️ 형식 오류\n"
+            "━━━━━━━━━━━━━━━━━━━━\n\n"
+            "HHMM 형식으로 입력하세요\n"
+            "예) 2100"
         )
         return EVENT_END_TIME
 
@@ -401,10 +388,12 @@ async def event_end_time_received(update: Update, context: ContextTypes.DEFAULT_
     context.user_data['event_data']['time'] = full_time
 
     await update.message.reply_text(
-        f"📝 행사 등록 (5/8)\n\n"
-        f"시간: {full_time}\n\n"
-        "장소를 입력하세요:\n"
-        "예시) 안양 BMW 전시장"
+        "📋 새 행사 등록\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"STEP 5/9 · 장소\n\n"
+        f"⏰ {full_time}\n\n"
+        "장소를 입력하세요\n"
+        "예) 안양 BMW 전시장"
     )
 
     return EVENT_LOCATION
@@ -415,9 +404,11 @@ async def event_location_received(update: Update, context: ContextTypes.DEFAULT_
     context.user_data['event_data']['location'] = update.message.text
 
     await update.message.reply_text(
-        "📝 행사 등록 (6/8)\n\n"
-        "급여를 입력하세요:\n"
-        "예시) 15만원 (3.3% 공제 후 지급)"
+        "📋 새 행사 등록\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        "STEP 6/9 · 급여\n\n"
+        "급여를 입력하세요\n"
+        "예) 15만원"
     )
 
     return EVENT_PAY
@@ -435,9 +426,11 @@ async def event_pay_received(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data['event_data']['pay_amount'] = pay_amount
 
     await update.message.reply_text(
-        "📝 행사 등록 (7/9)\n\n"
-        "근무 내용을 입력하세요:\n"
-        "예시) 발렛, 경호, 스탭, 안내"
+        "📋 새 행사 등록\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        "STEP 7/9 · 근무 내용\n\n"
+        "근무 내용을 입력하세요\n"
+        "예) 발렛, 경호, 안내"
     )
 
     return EVENT_WORK_TYPE
@@ -448,9 +441,11 @@ async def event_work_type_received(update: Update, context: ContextTypes.DEFAULT
     context.user_data['event_data']['work_type'] = update.message.text
 
     await update.message.reply_text(
-        "📝 행사 등록 (8/9)\n\n"
-        "복장/요구사항을 입력하세요:\n"
-        "예시) 검정계열 정장, 무관"
+        "📋 새 행사 등록\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        "STEP 8/9 · 복장\n\n"
+        "복장 요구사항을 입력하세요\n"
+        "예) 검정 정장"
     )
 
     return EVENT_DRESS
@@ -461,9 +456,11 @@ async def event_dress_received(update: Update, context: ContextTypes.DEFAULT_TYP
     context.user_data['event_data']['dress_code'] = update.message.text
 
     await update.message.reply_text(
-        "📝 행사 등록 (9/9)\n\n"
-        "담당자 정보를 입력하세요:\n"
-        "예시) 김실장 010-9263-1610"
+        "📋 새 행사 등록\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        "STEP 9/9 · 담당자\n\n"
+        "담당자 정보를 입력하세요\n"
+        "예) 김실장 010-1234-5678"
     )
 
     return EVENT_MANAGER
@@ -476,24 +473,23 @@ async def event_manager_received(update: Update, context: ContextTypes.DEFAULT_T
     # 입력된 정보 요약
     data = context.user_data['event_data']
 
-    summary = f"""
-📋 행사 정보 확인
-
-행사명: {data.get('title', '-')}
-날짜: {data.get('date', '-')}
-시간: {data.get('time', '-')}
-장소: {data.get('location', '-')}
-급여: {data.get('pay_text', '-')}
-근무내용: {data.get('work_type', '-')}
-복장: {data.get('dress_code', '-')}
-담당자: {data.get('manager', '-')}
-
-위 내용으로 등록하시겠습니까?
-"""
+    summary = (
+        "📋 행사 등록 확인\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"📌 {data.get('title', '-')}\n\n"
+        f"📅 날짜: {data.get('date', '-')}\n"
+        f"⏰ 시간: {data.get('time', '-')}\n"
+        f"📍 장소: {data.get('location', '-')}\n"
+        f"💰 급여: {data.get('pay_text', '-')}\n"
+        f"👔 복장: {data.get('dress_code', '-')}\n"
+        f"📞 담당: {data.get('manager', '-')}\n\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "위 내용으로 등록하시겠습니까?"
+    )
 
     keyboard = [
-        [InlineKeyboardButton("✅ 등록하기", callback_data="event_confirm")],
-        [InlineKeyboardButton("❌ 취소", callback_data="event_cancel")],
+        [InlineKeyboardButton("✓ 등록", callback_data="event_confirm")],
+        [InlineKeyboardButton("✕ 취소", callback_data="event_cancel")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -586,10 +582,14 @@ async def event_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def event_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """행사 등록 취소"""
-    query = update.callback_query
-    await query.answer()
+    # 버튼(callback_query) 또는 명령어(message) 모두 처리
+    if update.callback_query:
+        query = update.callback_query
+        await query.answer()
+        await query.edit_message_text("❌ 행사 등록이 취소되었습니다.")
+    else:
+        await update.message.reply_text("❌ 행사 등록이 취소되었습니다.")
 
-    await query.edit_message_text("❌ 행사 등록이 취소되었습니다.")
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -789,11 +789,12 @@ async def edit_title_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['edit_event_id'] = event_id
     context.user_data['edit_field'] = 'title'
 
+    keyboard = [[InlineKeyboardButton("🏠 처음으로", callback_data="edit_cancel")]]
     await query.edit_message_text(
         f"✏️ 행사명 수정\n\n"
         f"현재: {event['title']}\n\n"
-        f"새로운 행사명을 입력하세요:\n"
-        f"/cancel 로 취소"
+        f"새로운 행사명을 입력하세요:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
     return EDIT_TITLE
@@ -843,12 +844,13 @@ async def edit_date_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data['edit_event_id'] = event_id
 
+    keyboard = [[InlineKeyboardButton("🏠 처음으로", callback_data="edit_cancel")]]
     await query.edit_message_text(
         f"✏️ 날짜 수정\n\n"
         f"현재: {event['event_date']}\n\n"
         f"새로운 날짜를 MMDD 형식으로 입력하세요:\n"
-        f"예시) 0125 → 01월 25일\n"
-        f"/cancel 로 취소"
+        f"예시) 0125 → 01월 25일",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
     return EDIT_DATE
@@ -907,12 +909,13 @@ async def edit_time_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data['edit_event_id'] = event_id
 
+    keyboard = [[InlineKeyboardButton("🏠 처음으로", callback_data="edit_cancel")]]
     await query.edit_message_text(
         f"✏️ 시간 수정\n\n"
         f"현재: {event['event_time']}\n\n"
         f"새로운 시간을 입력하세요:\n"
-        f"예시) 0900~2100\n"
-        f"/cancel 로 취소"
+        f"예시) 0900~2100",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
     return EDIT_TIME
@@ -962,11 +965,12 @@ async def edit_location_start(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     context.user_data['edit_event_id'] = event_id
 
+    keyboard = [[InlineKeyboardButton("🏠 처음으로", callback_data="edit_cancel")]]
     await query.edit_message_text(
         f"✏️ 장소 수정\n\n"
         f"현재: {event['location']}\n\n"
-        f"새로운 장소를 입력하세요:\n"
-        f"/cancel 로 취소"
+        f"새로운 장소를 입력하세요:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
     return EDIT_LOCATION
@@ -1016,13 +1020,14 @@ async def edit_pay_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data['edit_event_id'] = event_id
 
+    keyboard = [[InlineKeyboardButton("🏠 처음으로", callback_data="edit_cancel")]]
     await query.edit_message_text(
         f"✏️ 급여 수정\n\n"
         f"현재: {event['pay_description']}\n"
         f"금액: {event['pay_amount']:,}원\n\n"
         f"새로운 급여를 입력하세요:\n"
-        f"예시) 15만원 (3.3% 공제 후 지급)\n"
-        f"/cancel 로 취소"
+        f"예시) 15만원 (3.3% 공제 후 지급)",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
     return EDIT_PAY
@@ -1082,12 +1087,13 @@ async def edit_work_type_start(update: Update, context: ContextTypes.DEFAULT_TYP
     context.user_data['edit_event_id'] = event_id
 
     current_work_type = event.get('work_type', '미입력')
+    keyboard = [[InlineKeyboardButton("🏠 처음으로", callback_data="edit_cancel")]]
     await query.edit_message_text(
         f"✏️ 근무 내용 수정\n\n"
         f"현재: {current_work_type}\n\n"
         f"새로운 근무 내용을 입력하세요:\n"
-        f"예시) 발렛, 경호, 스탭\n"
-        f"/cancel 로 취소"
+        f"예시) 발렛, 경호, 스탭",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
     return EDIT_WORK_TYPE
@@ -1137,11 +1143,12 @@ async def edit_dress_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data['edit_event_id'] = event_id
 
+    keyboard = [[InlineKeyboardButton("🏠 처음으로", callback_data="edit_cancel")]]
     await query.edit_message_text(
         f"✏️ 복장 수정\n\n"
         f"현재: {event['dress_code']}\n\n"
-        f"새로운 복장/요구사항을 입력하세요:\n"
-        f"/cancel 로 취소"
+        f"새로운 복장/요구사항을 입력하세요:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
     return EDIT_DRESS
@@ -1191,12 +1198,13 @@ async def edit_manager_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     context.user_data['edit_event_id'] = event_id
 
+    keyboard = [[InlineKeyboardButton("🏠 처음으로", callback_data="edit_cancel")]]
     await query.edit_message_text(
         f"✏️ 담당자 수정\n\n"
         f"현재: {event['manager_name']}\n\n"
         f"새로운 담당자 정보를 입력하세요:\n"
-        f"예시) 김철수 010-1234-5678\n"
-        f"/cancel 로 취소"
+        f"예시) 김철수 010-1234-5678",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
     return EDIT_MANAGER
@@ -1234,7 +1242,12 @@ async def edit_manager_received(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def edit_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """수정 취소"""
-    await update.message.reply_text("❌ 수정이 취소되었습니다.")
+    if update.callback_query:
+        query = update.callback_query
+        await query.answer()
+        await query.edit_message_text("❌ 수정이 취소되었습니다.")
+    else:
+        await update.message.reply_text("❌ 수정이 취소되었습니다.")
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -1259,7 +1272,9 @@ async def event_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # 지원자 수 조회
             apps = db.list_applications_by_event(event['id'])
             status_emoji = {"OPEN": "🟢", "CLOSED": "🔴", "COMPLETED": "✅"}.get(event['status'], "⚪")
-            button_text = f"{status_emoji} {event['short_code']} - 지원자 {len(apps)}명"
+            # 제목 표시 (너무 길면 자르기)
+            title = event['title'][:15] + ".." if len(event['title']) > 15 else event['title']
+            button_text = f"{status_emoji} {title} ({event['event_date']}) - {len(apps)}명"
             # 행사 상세 페이지로 이동 (모집글 표시)
             keyboard.append([InlineKeyboardButton(button_text, callback_data=f"event_detail_{event['id']}")])
 
@@ -1442,22 +1457,18 @@ async def app_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         event = db.get_event(app['event_id'])
 
-        notification_text = f"""
-✅ 근무 확정 알림
-
-(주)엘케이프라이빗
-
-📋 행사: {event['title']}
-📅 날짜: {event['event_date']}
-⏰ 시간: {event['event_time']}
-📍 장소: {event['location']}
-💰 급여: {event['pay_amount']:,}원
-
-확정되었습니다!
-행사 당일 출석 코드를 입력하여 출석해주세요.
-
-출석 코드: {check_in_code}
-"""
+        notification_text = (
+            "✅ 근무 확정\n"
+            "━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📌 {event['title']}\n\n"
+            f"📅 {event['event_date']}\n"
+            f"⏰ {event['event_time']}\n"
+            f"📍 {event['location']}\n"
+            f"💰 {event['pay_amount']:,}원\n\n"
+            "━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"🔐 출석 코드: {check_in_code}\n\n"
+            "당일 출근 시 위 코드를 입력해주세요."
+        )
 
         await worker_bot.send_message(
             chat_id=app['worker_telegram_id'],
@@ -1470,15 +1481,16 @@ async def app_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Failed to send notification: {e}")
 
-    keyboard = [[InlineKeyboardButton("🏠 처음으로", callback_data="main_menu")]]
+    keyboard = [[InlineKeyboardButton("← 메인", callback_data="main_menu")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await query.edit_message_text(
-        f"✅ 확정 완료!\n\n"
-        f"근무자: {app['worker_name']}\n"
-        f"행사: {app['event_title']}\n"
-        f"출석 코드: {check_in_code}\n\n"
-        f"근무자에게 알림이 발송되었습니다.",
+        "✅ 확정 완료\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"👤 {app['worker_name']}\n"
+        f"📌 {app['event_title']}\n"
+        f"🔐 {check_in_code}\n\n"
+        "알림이 발송되었습니다.",
         reply_markup=reply_markup
     )
 
@@ -2016,23 +2028,85 @@ async def manual_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         att = dict(att)
         event_id = att['event_id']
+        worker_id = att['worker_id']
         worker_telegram_id = att['telegram_id']
         worker_name = att['name']
         event_title = att['event_title']
         pay_amount = att['pay_amount']
         check_in_time = att['check_in_time']
 
+        # 근무시간 계산 (KST 기준)
+        from datetime import datetime
+        check_in_dt = datetime.fromisoformat(check_in_time.split('.')[0])  # microseconds 제거
+        check_out_dt = now_kst().replace(tzinfo=None)  # KST 시간 사용, naive datetime으로
+        worked_minutes = max(0, int((check_out_dt - check_in_dt).total_seconds() / 60))
+
         cursor.execute("""
             UPDATE attendance
-            SET status = 'COMPLETED', check_out_time = ?
+            SET status = 'COMPLETED', check_out_time = ?, worked_minutes = ?
             WHERE id = ?
-        """, (now, attendance_id))
+        """, (now, worked_minutes, attendance_id))
         conn.commit()
 
     # 급여 계산 (3.3% 공제)
     net_pay = int(pay_amount * 0.967)
 
-    await query.answer("🎉 퇴근 처리 완료!", show_alert=True)
+    # 블록체인 기록
+    blockchain_msg = ""
+    try:
+        from chain import polygon_chain
+        import hashlib
+        import json
+
+        # 출석 정보 다시 조회
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM attendance WHERE id = ?", (attendance_id,))
+            attendance = dict(cursor.fetchone())
+
+        # 근무 로그 해시 생성
+        log_data = {
+            'event_id': attendance['event_id'],
+            'worker_id': attendance['worker_id'],
+            'check_in_time': str(attendance['check_in_time']),
+            'check_out_time': str(attendance['check_out_time']),
+            'worked_minutes': attendance['worked_minutes']
+        }
+        log_hash = hashlib.sha256(json.dumps(log_data, sort_keys=True).encode()).hexdigest()
+
+        from utils import generate_worker_uid_hash
+        worker_uid_hash = generate_worker_uid_hash(
+            worker_id=attendance['worker_id'],
+            salt=os.getenv('SALT_SECRET', 'default_salt')
+        )
+
+        # 블록체인에 기록
+        result = polygon_chain.record_work_log(
+            log_hash=log_hash,
+            event_id=attendance['event_id'],
+            worker_uid_hash=worker_uid_hash
+        )
+
+        if result['success']:
+            chain_log_id = db.create_chain_log(
+                attendance_id=attendance['id'],
+                event_id=attendance['event_id'],
+                worker_uid_hash=worker_uid_hash,
+                log_hash=log_hash
+            )
+            db.update_chain_log_tx(
+                chain_log_id=chain_log_id,
+                tx_hash=result['tx_hash'],
+                block_number=result['block_number']
+            )
+            blockchain_msg = " ⛓️"
+            logger.info(f"Blockchain recorded: tx={result['tx_hash']}")
+        else:
+            logger.warning(f"Blockchain recording failed: {result.get('error')}")
+    except Exception as e:
+        logger.error(f"Blockchain recording error: {e}")
+
+    await query.answer(f"🎉 퇴근 처리 완료!{blockchain_msg}", show_alert=True)
 
     # 근무자에게 알림 전송 (근무자 봇으로)
     try:
@@ -2297,7 +2371,8 @@ async def blockchain_records(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 cl.block_number,
                 cl.recorded_at
             FROM chain_logs cl
-            LEFT JOIN workers w ON cl.worker_id = w.id
+            LEFT JOIN attendance a ON cl.attendance_id = a.id
+            LEFT JOIN workers w ON a.worker_id = w.id
             LEFT JOIN events e ON cl.event_id = e.id
             ORDER BY cl.recorded_at DESC
             LIMIT 20
@@ -2340,7 +2415,6 @@ async def blockchain_transactions(update: Update, context: ContextTypes.DEFAULT_
             SELECT
                 tx_hash,
                 block_number,
-                gas_used,
                 recorded_at
             FROM chain_logs
             WHERE tx_hash IS NOT NULL
@@ -2362,7 +2436,6 @@ async def blockchain_transactions(update: Update, context: ContextTypes.DEFAULT_
             text += f"━━━━━━━━━━━━━━━━\n"
             text += f"🔗 TX: {tx_hash[:16]}...\n"
             text += f"📦 Block: #{tx['block_number']}\n"
-            text += f"⛽ Gas: {tx['gas_used']:,}\n"
             text += f"📅 {tx['recorded_at'][:16]}\n"
             text += f"🌐 {explorer_url}\n"
 
@@ -2439,7 +2512,8 @@ async def verify_event(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 cl.log_hash,
                 cl.recorded_at
             FROM chain_logs cl
-            LEFT JOIN workers w ON cl.worker_id = w.id
+            LEFT JOIN attendance a ON cl.attendance_id = a.id
+            LEFT JOIN workers w ON a.worker_id = w.id
             WHERE cl.event_id = ?
             ORDER BY cl.recorded_at DESC
         """, (event_id,))
@@ -2604,22 +2678,25 @@ async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         done_att = att_stats['done_count'] if att_stats else 0
 
     keyboard = [
-        [InlineKeyboardButton("➕ 행사 등록", callback_data="event_register")],
-        [InlineKeyboardButton("📋 행사 목록", callback_data="event_list")],
-        [InlineKeyboardButton(f"👥 지원자 관리 (대기 {pending_apps} / 확정 {confirmed_apps})", callback_data="manage_applications")],
+        [InlineKeyboardButton("📋 행사 관리", callback_data="event_list")],
+        [InlineKeyboardButton("➕ 새 행사 등록", callback_data="event_register")],
+        [InlineKeyboardButton(f"👥 지원자 ({pending_apps}대기 / {confirmed_apps}확정)", callback_data="manage_applications")],
+        [InlineKeyboardButton(f"📊 출석 ({pending_att}대기 / {done_att}완료)", callback_data="manage_attendance")],
         [InlineKeyboardButton("👷 근무자 관리", callback_data="manage_workers")],
-        [InlineKeyboardButton(f"📊 출석 관리 (대기 {pending_att} / 완료 {done_att})", callback_data="manage_attendance")],
-        [InlineKeyboardButton("💰 엑셀 다운로드", callback_data="export_payroll")],
-        [InlineKeyboardButton("⛓️ 블록체인", callback_data="blockchain_menu")],
-        [InlineKeyboardButton("📖 도움말", callback_data="help_menu")],
+        [InlineKeyboardButton("📥 정산 다운로드", callback_data="export_payroll")],
+        [InlineKeyboardButton("⛓️ 블록체인 검증", callback_data="blockchain_menu")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     # 새 메시지 전송
     await context.bot.send_message(
         chat_id=query.message.chat_id,
-        text="(주)엘케이프라이빗 행사관리\n"
-             "아래 메뉴에서 작업을 선택해주세요.",
+        text="🛡 WorkProof Chain 관리자\n"
+             "━━━━━━━━━━━━━━━━━━━━\n\n"
+             f"📊 현황\n"
+             f"• 지원자: 대기 {pending_apps} / 확정 {confirmed_apps}\n"
+             f"• 출석: 대기 {pending_att} / 완료 {done_att}\n\n"
+             "━━━━━━━━━━━━━━━━━━━━",
         reply_markup=reply_markup
     )
 
@@ -2653,7 +2730,10 @@ def main():
                 CallbackQueryHandler(event_cancel, pattern="^event_cancel$"),
             ],
         },
-        fallbacks=[CommandHandler("cancel", event_cancel)],
+        fallbacks=[
+            CommandHandler("cancel", event_cancel),
+            CallbackQueryHandler(event_cancel, pattern="^event_cancel$"),
+        ],
     )
 
     # Conversation handler: 행사명 수정
@@ -2662,7 +2742,7 @@ def main():
         states={
             EDIT_TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_title_received)],
         },
-        fallbacks=[CommandHandler("cancel", edit_cancel)],
+        fallbacks=[CommandHandler("cancel", edit_cancel), CallbackQueryHandler(edit_cancel, pattern="^edit_cancel$")],
     )
 
     # Conversation handler: 날짜 수정
@@ -2671,7 +2751,7 @@ def main():
         states={
             EDIT_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_date_received)],
         },
-        fallbacks=[CommandHandler("cancel", edit_cancel)],
+        fallbacks=[CommandHandler("cancel", edit_cancel), CallbackQueryHandler(edit_cancel, pattern="^edit_cancel$")],
     )
 
     # Conversation handler: 시간 수정
@@ -2680,7 +2760,7 @@ def main():
         states={
             EDIT_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_time_received)],
         },
-        fallbacks=[CommandHandler("cancel", edit_cancel)],
+        fallbacks=[CommandHandler("cancel", edit_cancel), CallbackQueryHandler(edit_cancel, pattern="^edit_cancel$")],
     )
 
     # Conversation handler: 장소 수정
@@ -2689,7 +2769,7 @@ def main():
         states={
             EDIT_LOCATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_location_received)],
         },
-        fallbacks=[CommandHandler("cancel", edit_cancel)],
+        fallbacks=[CommandHandler("cancel", edit_cancel), CallbackQueryHandler(edit_cancel, pattern="^edit_cancel$")],
     )
 
     # Conversation handler: 급여 수정
@@ -2698,7 +2778,7 @@ def main():
         states={
             EDIT_PAY: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_pay_received)],
         },
-        fallbacks=[CommandHandler("cancel", edit_cancel)],
+        fallbacks=[CommandHandler("cancel", edit_cancel), CallbackQueryHandler(edit_cancel, pattern="^edit_cancel$")],
     )
 
     # Conversation handler: 근무내용 수정
@@ -2707,7 +2787,7 @@ def main():
         states={
             EDIT_WORK_TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_work_type_received)],
         },
-        fallbacks=[CommandHandler("cancel", edit_cancel)],
+        fallbacks=[CommandHandler("cancel", edit_cancel), CallbackQueryHandler(edit_cancel, pattern="^edit_cancel$")],
     )
 
     # Conversation handler: 복장 수정
@@ -2716,7 +2796,7 @@ def main():
         states={
             EDIT_DRESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_dress_received)],
         },
-        fallbacks=[CommandHandler("cancel", edit_cancel)],
+        fallbacks=[CommandHandler("cancel", edit_cancel), CallbackQueryHandler(edit_cancel, pattern="^edit_cancel$")],
     )
 
     # Conversation handler: 담당자 수정
@@ -2725,7 +2805,7 @@ def main():
         states={
             EDIT_MANAGER: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_manager_received)],
         },
-        fallbacks=[CommandHandler("cancel", edit_cancel)],
+        fallbacks=[CommandHandler("cancel", edit_cancel), CallbackQueryHandler(edit_cancel, pattern="^edit_cancel$")],
     )
 
     # 핸들러 등록

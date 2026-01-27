@@ -91,8 +91,11 @@ def generate_short_code(title: str, date: str) -> str:
         date: 날짜 (예: 1월 25일 or 2026-01-25)
 
     Returns:
-        str: Short code (예: BMW_0125)
+        str: Short code (예: BMW_0125_A3F)
     """
+    import random
+    import string
+
     # 제목에서 영문/한글 첫 단어 추출
     title_words = title.split()
     title_part = title_words[0][:10] if title_words else "EVENT"
@@ -103,7 +106,10 @@ def generate_short_code(title: str, date: str) -> str:
     # 공백/특수문자 제거
     title_part = ''.join(c for c in title_part if c.isalnum())
 
-    return f"{title_part}_{date_part}".upper()
+    # 랜덤 suffix 추가 (충돌 방지)
+    suffix = ''.join(random.choices(string.ascii_uppercase + string.digits, k=3))
+
+    return f"{title_part}_{date_part}_{suffix}".upper()
 
 
 def extract_mmdd(date_str: str) -> str:
