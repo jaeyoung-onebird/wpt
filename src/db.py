@@ -8,12 +8,23 @@ import os
 import random
 import string
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import logging
 from contextlib import contextmanager
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
+
+# 한국 시간대 (UTC+9)
+KST = timezone(timedelta(hours=9))
+
+def now_kst():
+    """현재 한국 시간 반환"""
+    return datetime.now(KST)
+
+def now_kst_naive():
+    """현재 한국 시간 반환 (timezone 정보 없이)"""
+    return datetime.now(KST).replace(tzinfo=None)
 
 
 class Database:
@@ -499,6 +510,14 @@ class Database:
             row = cursor.fetchone()
             return dict(row) if row else None
 
+    def get_worker_by_id(self, worker_id: int) -> Optional[Dict]:
+        """ID로 근무자 조회"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute("SELECT * FROM workers WHERE id = %s", (worker_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
     def list_workers(self, limit: int = 100) -> List[Dict]:
         """모든 근무자 조회"""
         with self.get_connection() as conn:
@@ -526,7 +545,7 @@ class Database:
         if not updates:
             return
 
-        values.append(datetime.now())
+        values.append(now_kst_naive())
         values.append(worker_id)
 
         with self.get_connection() as conn:
@@ -612,7 +631,7 @@ class Database:
             cursor.execute("""
                 UPDATE events SET status = %s, updated_at = %s
                 WHERE id = %s
-            """, (status, datetime.now(), event_id))
+            """, (status, now_kst_naive(), event_id))
 
     # ===== Applications =====
     def create_application(self, event_id: int, worker_id: int) -> Optional[int]:
@@ -712,7 +731,7 @@ class Database:
                     UPDATE applications
                     SET status = %s, confirmed_at = %s, confirmed_by = %s
                     WHERE id = %s
-                """, (status, datetime.now(), confirmed_by, app_id))
+                """, (status, now_kst_naive(), confirmed_by, app_id))
             elif status == 'REJECTED':
                 cursor.execute("""
                     UPDATE applications
@@ -732,7 +751,7 @@ class Database:
 
     def cancel_application(self, app_id: int, event_date: str = None):
         """지원 취소 처리 (취소 유형 자동 분류)"""
-        now = datetime.now()
+        now = now_kst_naive()
         cancel_type = 'ADVANCE'
 
         if event_date:
@@ -772,7 +791,7 @@ class Database:
 
     def mark_no_show(self, attendance_id: int):
         """노쇼 처리"""
-        now = datetime.now()
+        now = now_kst_naive()
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
@@ -816,9 +835,17 @@ class Database:
             row = cursor.fetchone()
             return dict(row) if row else None
 
+    def get_attendance_by_id(self, attendance_id: int) -> Optional[Dict]:
+        """출석 ID로 조회"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute("SELECT * FROM attendance WHERE id = %s", (attendance_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
     def check_in(self, attendance_id: int):
         """출석 처리 (지각 시간 자동 계산)"""
-        now = datetime.now()
+        now = now_kst_naive()
         with self.get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             cursor.execute("SELECT scheduled_start FROM attendance WHERE id = %s", (attendance_id,))
@@ -849,7 +876,7 @@ class Database:
 
     def check_out(self, attendance_id: int, completed_by: int):
         """퇴근 처리 (근무시간 준수율 자동 계산)"""
-        check_out_time = datetime.now()
+        check_out_time = now_kst_naive()
         with self.get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             cursor.execute("""
@@ -937,7 +964,7 @@ class Database:
                 UPDATE chain_logs
                 SET tx_hash = %s, block_number = %s, recorded_at = %s
                 WHERE id = %s
-            """, (tx_hash, block_number, datetime.now(), chain_log_id))
+            """, (tx_hash, block_number, now_kst_naive(), chain_log_id))
 
     def get_chain_logs_by_worker(self, worker_id: int) -> List[Dict]:
         """근무자별 블록체인 로그"""
@@ -956,6 +983,24 @@ class Database:
                 ORDER BY cl.recorded_at DESC
             """, (worker_id,))
             return [dict(row) for row in cursor.fetchall()]
+
+    def get_chain_log_by_id(self, log_id: int) -> Optional[Dict]:
+        """ID로 블록체인 로그 조회"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute("""
+                SELECT cl.*, e.title as event_title, e.event_date,
+                       e.pay_amount, e.location,
+                       att.worked_minutes, att.check_in_time, att.check_out_time,
+                       att.worker_id, att.status, w.name as worker_name, w.birth_date as worker_birth_date
+                FROM chain_logs cl
+                JOIN attendance att ON cl.attendance_id = att.id
+                JOIN events e ON cl.event_id = e.id
+                JOIN workers w ON att.worker_id = w.id
+                WHERE cl.id = %s
+            """, (log_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
 
     # ===== Admin =====
     def is_admin(self, telegram_id: int) -> bool:
@@ -1141,7 +1186,7 @@ class Database:
     # ===== Daily Check-in =====
     def check_today_checkin(self, worker_id: int) -> Optional[Dict]:
         """오늘 출석체크 여부 확인"""
-        today = datetime.now().strftime('%Y-%m-%d')
+        today = now_kst_naive().strftime('%Y-%m-%d')
         with self.get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             cursor.execute("""
@@ -1154,7 +1199,7 @@ class Database:
     def get_streak_days(self, worker_id: int) -> int:
         """연속 출석 일수 계산"""
         from datetime import timedelta
-        today = datetime.now().date()
+        today = now_kst_naive().date()
 
         with self.get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
@@ -1187,7 +1232,7 @@ class Database:
 
     def create_daily_checkin(self, worker_id: int, reward_amount: int = 1, tx_hash: str = None) -> Dict:
         """일일 출석체크 생성"""
-        today = datetime.now().strftime('%Y-%m-%d')
+        today = now_kst_naive().strftime('%Y-%m-%d')
         streak = self.get_streak_days(worker_id) + 1
 
         with self.get_connection() as conn:
@@ -1377,7 +1422,7 @@ class Database:
             expires_at = row['expires_at']
             if isinstance(expires_at, str):
                 expires_at = datetime.fromisoformat(expires_at)
-            if datetime.now() > expires_at:
+            if now_kst_naive() > expires_at:
                 return False
             cursor.execute("""
                 UPDATE email_verifications SET verified = TRUE WHERE id = %s
@@ -1699,7 +1744,7 @@ class Database:
                     updates.append(f"{key} = %s")
                     values.append(value)
                 if updates:
-                    values.extend([datetime.now(), existing['id']])
+                    values.extend([now_kst_naive(), existing['id']])
                     cursor.execute(f"""
                         UPDATE worker_monthly_stats
                         SET {', '.join(updates)}, updated_at = %s

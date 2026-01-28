@@ -4,12 +4,14 @@ from fastapi.responses import FileResponse
 from datetime import datetime, timedelta
 from urllib.parse import quote
 import os
+from psycopg2.extras import RealDictCursor
 
 from ..dependencies import get_db, require_auth, require_admin
 from ..config import get_settings, Settings
 from ..schemas.event import EventListResponse, EventResponse
 from ..schemas.attendance import AttendanceListResponse, AttendanceResponse
 from db import Database
+from utils import now_kst_str
 
 router = APIRouter()
 
@@ -37,7 +39,7 @@ async def admin_dashboard(
 ):
     """관리자 대시보드 데이터"""
     with db.get_connection() as conn:
-        cursor = conn.cursor()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         # 통계
         cursor.execute("SELECT COUNT(*) as cnt FROM workers")
         total_workers = cursor.fetchone()["cnt"]
@@ -45,7 +47,7 @@ async def admin_dashboard(
         # 모집중 행사 (OPEN 상태이고 날짜가 지나지 않은 것)
         cursor.execute("""
             SELECT COUNT(*) as cnt FROM events
-            WHERE status = 'OPEN' AND event_date >= CURRENT_DATE
+            WHERE status = 'OPEN' AND event_date::DATE >= CURRENT_DATE
         """)
         open_events = cursor.fetchone()["cnt"]
 
@@ -62,7 +64,7 @@ async def admin_dashboard(
 
         # 오늘 행사
         cursor.execute(
-            "SELECT * FROM events WHERE event_date = CURRENT_DATE ORDER BY start_time"
+            "SELECT * FROM events WHERE event_date::DATE = CURRENT_DATE ORDER BY start_time"
         )
         today_events = [dict(row) for row in cursor.fetchall()]
 
@@ -95,7 +97,7 @@ async def get_event_applications(
     enriched = []
     for app in apps:
         with db.get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
             cursor.execute(
                 "SELECT name, phone, residence, face_photo_file_id FROM workers WHERE id = %s",
                 (app.get("worker_id"),)
@@ -132,7 +134,7 @@ async def get_event_attendance(
     enriched = []
     for att in attendance_list:
         with db.get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
             cursor.execute(
                 "SELECT name, phone FROM workers WHERE id = %s",
                 (att.get("worker_id"),)
@@ -168,7 +170,7 @@ async def manual_checkin(
 ):
     """수동 출근 처리"""
     with db.get_connection() as conn:
-        cursor = conn.cursor()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute("SELECT * FROM attendance WHERE id = %s", (attendance_id,))
         row = cursor.fetchone()
         if not row:
@@ -187,7 +189,7 @@ async def manual_checkout(
 ):
     """수동 퇴근 처리"""
     with db.get_connection() as conn:
-        cursor = conn.cursor()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute("SELECT * FROM attendance WHERE id = %s", (attendance_id,))
         row = cursor.fetchone()
         if not row:
@@ -350,7 +352,7 @@ async def export_event_payroll(
         worker_id = att.get("worker_id")
         if worker_id:
             with db.get_connection() as conn:
-                cursor = conn.cursor()
+                cursor = conn.cursor(cursor_factory=RealDictCursor)
                 cursor.execute(
                     "SELECT * FROM workers WHERE id = %s",
                     (worker_id,)
@@ -400,7 +402,7 @@ async def export_event_report(
         worker_id = att.get("worker_id")
         if worker_id:
             with db.get_connection() as conn:
-                cursor = conn.cursor()
+                cursor = conn.cursor(cursor_factory=RealDictCursor)
                 cursor.execute(
                     "SELECT * FROM workers WHERE id = %s",
                     (worker_id,)
@@ -453,7 +455,7 @@ async def get_analytics(
 ):
     """분석 데이터 조회"""
     with db.get_connection() as conn:
-        cursor = conn.cursor()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         # 기간 필터
         if period == "all":
             date_filter = ""
@@ -622,7 +624,7 @@ async def get_analytics(
         work_time_stats = dict(cursor.fetchone())
 
     return {
-        "generated_at": datetime.now().isoformat(),
+        "generated_at": now_kst_str(),
         "period": period,
         "summary": {
             "total_workers": total_workers,
@@ -663,7 +665,7 @@ async def get_worker_analytics(
 ):
     """근무자 WorkScore 및 상세 분석"""
     with db.get_connection() as conn:
-        cursor = conn.cursor()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         # 근무자별 상세 통계
         cursor.execute("""
             SELECT
@@ -751,7 +753,7 @@ async def get_worker_analytics(
         avg_attendance = round(sum(w['attendance_rate'] for w in scored_workers) / len(scored_workers), 1) if scored_workers else 0
 
     return {
-        "generated_at": datetime.now().isoformat(),
+        "generated_at": now_kst_str(),
         "total_workers": len(workers_data),
         "averages": {
             "work_score": avg_work_score,
@@ -770,13 +772,13 @@ async def get_revenue_analytics(
 ):
     """매출/수익 통계"""
     with db.get_connection() as conn:
-        cursor = conn.cursor()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         # 기간 필터
         if period == "all":
             date_filter = ""
         else:
             days = int(period)
-            date_filter = f"WHERE e.event_date >= CURRENT_DATE - INTERVAL '{days} days'"
+            date_filter = f"WHERE e.event_date::DATE >= CURRENT_DATE - INTERVAL '{days} days'"
 
         # 일별 매출
         cursor.execute(f"""
@@ -826,15 +828,15 @@ async def get_revenue_analytics(
         # 오늘/이번주/이번달 매출
         cursor.execute("""
             SELECT
-                SUM(CASE WHEN e.event_date = CURRENT_DATE THEN e.pay_amount * COALESCE(e.headcount, 1) ELSE 0 END) as today,
-                SUM(CASE WHEN e.event_date >= CURRENT_DATE - INTERVAL '7 days' THEN e.pay_amount * COALESCE(e.headcount, 1) ELSE 0 END) as this_week,
-                SUM(CASE WHEN e.event_date >= date_trunc('month', CURRENT_DATE) THEN e.pay_amount * COALESCE(e.headcount, 1) ELSE 0 END) as this_month
+                SUM(CASE WHEN e.event_date::DATE = CURRENT_DATE THEN e.pay_amount * COALESCE(e.headcount, 1) ELSE 0 END) as today,
+                SUM(CASE WHEN e.event_date::DATE >= CURRENT_DATE - INTERVAL '7 days' THEN e.pay_amount * COALESCE(e.headcount, 1) ELSE 0 END) as this_week,
+                SUM(CASE WHEN e.event_date::DATE >= date_trunc('month', CURRENT_DATE) THEN e.pay_amount * COALESCE(e.headcount, 1) ELSE 0 END) as this_month
             FROM events e
         """)
         period_summary = dict(cursor.fetchone())
 
     return {
-        "generated_at": datetime.now().isoformat(),
+        "generated_at": now_kst_str(),
         "period": period,
         "summary": {
             "total_events": summary['total_events'] or 0,
@@ -858,7 +860,7 @@ async def get_event_analytics(
 ):
     """행사 통계 분석"""
     with db.get_connection() as conn:
-        cursor = conn.cursor()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         # 행사별 상세 통계
         cursor.execute("""
             SELECT
@@ -943,7 +945,7 @@ async def get_event_analytics(
         events_by_hour = [dict(r) for r in cursor.fetchall()]
 
     return {
-        "generated_at": datetime.now().isoformat(),
+        "generated_at": now_kst_str(),
         "total_events": total_events,
         "averages": {
             "fulfillment_rate": avg_fulfillment,
@@ -976,7 +978,7 @@ async def get_recommended_workers(
     event_work_type = event.get('work_type', '')
 
     with db.get_connection() as conn:
-        cursor = conn.cursor()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         # 이미 지원한 근무자 ID 목록
         cursor.execute("""
             SELECT worker_id FROM applications WHERE event_id = %s
@@ -1082,7 +1084,7 @@ async def get_recommended_workers(
         top_recommendations = recommendations[:limit]
 
     return {
-        "generated_at": datetime.now().isoformat(),
+        "generated_at": now_kst_str(),
         "event": {
             "id": event.get('id'),
             "title": event.get('title'),

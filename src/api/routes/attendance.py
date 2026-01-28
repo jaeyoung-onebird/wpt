@@ -11,6 +11,7 @@ from ..schemas.attendance import (
 )
 from db import Database
 from wpt_service import wpt_service
+from utils import now_kst
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -21,9 +22,10 @@ WORK_COMPLETION_REWARD = 2
 
 def _reward_work_completion(worker_id: int, db: Database):
     """근무 완료 시 WPT 보상 지급"""
+    from psycopg2.extras import RealDictCursor
     # 근무자 정보 조회
     with db.get_connection() as conn:
-        cursor = cursor = conn.cursor()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute("SELECT * FROM workers WHERE id = %s", (worker_id,))
         row = cursor.fetchone()
         if not row:
@@ -85,15 +87,16 @@ def _enrich_attendance(att: dict, db: Database) -> dict:
 
     # 근무자 정보
     with db.get_connection() as conn:
-        cursor = cursor = conn.cursor()
+        from psycopg2.extras import RealDictCursor
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute("SELECT name FROM workers WHERE id = %s", (att.get("worker_id"),))
         worker = cursor.fetchone()
         if worker:
             att["worker_name"] = worker["name"]
 
         # 블록체인 정보
-        cursor = conn.execute(
-            "SELECT tx_hash, block_number, log_hash FROM chain_logs WHERE attendance_id = ?",
+        cursor.execute(
+            "SELECT tx_hash, block_number, log_hash FROM chain_logs WHERE attendance_id = %s",
             (att.get("id"),)
         )
         chain_log = cursor.fetchone()
@@ -143,7 +146,8 @@ async def check_out(
     """퇴근 처리"""
     # 출석 조회
     with db.get_connection() as conn:
-        cursor = cursor = conn.cursor()
+        from psycopg2.extras import RealDictCursor
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute("SELECT * FROM attendance WHERE id = %s", (attendance_id,))
         row = cursor.fetchone()
         if not row:
@@ -171,7 +175,8 @@ async def check_out(
 
     # 업데이트된 출석 정보 재조회 (worked_minutes 포함)
     with db.get_connection() as conn:
-        cursor = cursor = conn.cursor()
+        from psycopg2.extras import RealDictCursor
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute("SELECT * FROM attendance WHERE id = %s", (attendance_id,))
         updated = dict(cursor.fetchone())
 
@@ -240,8 +245,10 @@ async def get_my_attendance(
     worker = auth["worker"]
 
     with db.get_connection() as conn:
-        cursor = conn.execute(
-            "SELECT * FROM attendance WHERE worker_id = ? ORDER BY created_at DESC",
+        from psycopg2.extras import RealDictCursor
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute(
+            "SELECT * FROM attendance WHERE worker_id = %s ORDER BY created_at DESC",
             (worker["id"],)
         )
         rows = cursor.fetchall()
@@ -261,7 +268,8 @@ async def get_attendance(
 ):
     """출석 상세 (관리자 전용)"""
     with db.get_connection() as conn:
-        cursor = cursor = conn.cursor()
+        from psycopg2.extras import RealDictCursor
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute("SELECT * FROM attendance WHERE id = %s", (attendance_id,))
         row = cursor.fetchone()
         if not row:
@@ -282,11 +290,13 @@ async def download_payment_statement(
 
     # 출석 정보 조회
     with db.get_connection() as conn:
-        cursor = conn.execute(
+        from psycopg2.extras import RealDictCursor
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute(
             """SELECT a.*, e.title as event_title, e.event_date, e.pay_amount
                FROM attendance a
                JOIN events e ON a.event_id = e.id
-               WHERE a.id = ?""",
+               WHERE a.id = %s""",
             (attendance_id,)
         )
         row = cursor.fetchone()
@@ -555,7 +565,7 @@ def generate_payment_statement_pdf(worker: dict, attendance: dict) -> bytes:
     # 발급일 (하단 고정)
     c.setFillColor(HexColor(GRAY))
     c.setFont(font_name, 9)
-    today = datetime.now().strftime("%Y년 %m월 %d일")
+    today = now_kst().strftime("%Y년 %m월 %d일")
     c.drawCentredString(width/2, 25*mm, f"발급일: {today}")
 
     c.save()

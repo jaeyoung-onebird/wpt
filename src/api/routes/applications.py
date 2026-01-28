@@ -20,7 +20,8 @@ def _enrich_application(app: dict, db: Database) -> dict:
 
     # 근무자 정보
     with db.get_connection() as conn:
-        cursor = cursor = conn.cursor()
+        from psycopg2.extras import RealDictCursor
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute("SELECT name, phone FROM workers WHERE id = %s", (app.get("worker_id"),))
         worker = cursor.fetchone()
         if worker:

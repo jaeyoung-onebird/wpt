@@ -166,7 +166,7 @@ async def reject_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
             cursor.execute("""
                 SELECT username, first_name, last_name
                 FROM pending_admin_requests
-                WHERE telegram_id = ?
+                WHERE telegram_id = %s
             """, (telegram_id,))
             row = cursor.fetchone()
             if row:
@@ -707,16 +707,16 @@ async def event_delete_confirm(update: Update, context: ContextTypes.DEFAULT_TYP
             cursor = conn.cursor()
 
             # 출석 기록 삭제
-            cursor.execute("DELETE FROM attendance WHERE event_id = ?", (event_id,))
+            cursor.execute("DELETE FROM attendance WHERE event_id = %s", (event_id,))
 
             # 지원 기록 삭제
-            cursor.execute("DELETE FROM applications WHERE event_id = ?", (event_id,))
+            cursor.execute("DELETE FROM applications WHERE event_id = %s", (event_id,))
 
             # 블록체인 로그 삭제 (선택사항)
-            cursor.execute("DELETE FROM chain_logs WHERE event_id = ?", (event_id,))
+            cursor.execute("DELETE FROM chain_logs WHERE event_id = %s", (event_id,))
 
             # 행사 삭제
-            cursor.execute("DELETE FROM events WHERE id = ?", (event_id,))
+            cursor.execute("DELETE FROM events WHERE id = %s", (event_id,))
 
             conn.commit()
 
@@ -808,7 +808,7 @@ async def edit_title_received(update: Update, context: ContextTypes.DEFAULT_TYPE
     try:
         with db.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("UPDATE events SET title = ? WHERE id = ?", (new_title, event_id))
+            cursor.execute("UPDATE events SET title = %s WHERE id = %s", (new_title, event_id))
             conn.commit()
 
         keyboard = [[InlineKeyboardButton("✅ 확인", callback_data=f"event_detail_{event_id}")]]
@@ -873,7 +873,7 @@ async def edit_date_received(update: Update, context: ContextTypes.DEFAULT_TYPE)
     try:
         with db.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("UPDATE events SET event_date = ? WHERE id = ?", (formatted_date, event_id))
+            cursor.execute("UPDATE events SET event_date = %s WHERE id = %s", (formatted_date, event_id))
             conn.commit()
 
         keyboard = [[InlineKeyboardButton("✅ 확인", callback_data=f"event_detail_{event_id}")]]
@@ -929,7 +929,7 @@ async def edit_time_received(update: Update, context: ContextTypes.DEFAULT_TYPE)
     try:
         with db.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("UPDATE events SET event_time = ? WHERE id = ?", (new_time, event_id))
+            cursor.execute("UPDATE events SET event_time = %s WHERE id = %s", (new_time, event_id))
             conn.commit()
 
         keyboard = [[InlineKeyboardButton("✅ 확인", callback_data=f"event_detail_{event_id}")]]
@@ -984,7 +984,7 @@ async def edit_location_received(update: Update, context: ContextTypes.DEFAULT_T
     try:
         with db.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("UPDATE events SET location = ? WHERE id = ?", (new_location, event_id))
+            cursor.execute("UPDATE events SET location = %s WHERE id = %s", (new_location, event_id))
             conn.commit()
 
         keyboard = [[InlineKeyboardButton("✅ 확인", callback_data=f"event_detail_{event_id}")]]
@@ -1047,7 +1047,7 @@ async def edit_pay_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with db.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "UPDATE events SET pay_description = ?, pay_amount = ? WHERE id = ?",
+                "UPDATE events SET pay_description = %s, pay_amount = %s WHERE id = %s",
                 (pay_text, pay_amount, event_id)
             )
             conn.commit()
@@ -1107,7 +1107,7 @@ async def edit_work_type_received(update: Update, context: ContextTypes.DEFAULT_
     try:
         with db.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("UPDATE events SET work_type = ? WHERE id = ?", (new_work_type, event_id))
+            cursor.execute("UPDATE events SET work_type = %s WHERE id = %s", (new_work_type, event_id))
             conn.commit()
 
         keyboard = [[InlineKeyboardButton("✅ 확인", callback_data=f"event_detail_{event_id}")]]
@@ -1162,7 +1162,7 @@ async def edit_dress_received(update: Update, context: ContextTypes.DEFAULT_TYPE
     try:
         with db.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("UPDATE events SET dress_code = ? WHERE id = ?", (new_dress, event_id))
+            cursor.execute("UPDATE events SET dress_code = %s WHERE id = %s", (new_dress, event_id))
             conn.commit()
 
         keyboard = [[InlineKeyboardButton("✅ 확인", callback_data=f"event_detail_{event_id}")]]
@@ -1218,7 +1218,7 @@ async def edit_manager_received(update: Update, context: ContextTypes.DEFAULT_TY
     try:
         with db.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("UPDATE events SET manager_name = ? WHERE id = ?", (new_manager, event_id))
+            cursor.execute("UPDATE events SET manager_name = %s WHERE id = %s", (new_manager, event_id))
             conn.commit()
 
         keyboard = [[InlineKeyboardButton("✅ 확인", callback_data=f"event_detail_{event_id}")]]
@@ -1553,7 +1553,7 @@ async def app_unconfirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cursor = conn.cursor()
         cursor.execute("""
             SELECT * FROM attendance
-            WHERE event_id = ? AND worker_id = ?
+            WHERE event_id = %s AND worker_id = %s
         """, (app['event_id'], app['worker_id']))
         attendance = cursor.fetchone()
 
@@ -1565,7 +1565,7 @@ async def app_unconfirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         # 출석 기록 삭제
-        cursor.execute("DELETE FROM attendance WHERE id = ?", (attendance['id'],))
+        cursor.execute("DELETE FROM attendance WHERE id = %s", (attendance['id'],))
         conn.commit()
         logger.info(f"Attendance deleted: attendance_id={attendance['id']}")
 
@@ -1673,7 +1673,7 @@ async def worker_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 근무자 정보 조회
     with db.get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM workers WHERE id = ?", (worker_id,))
+        cursor.execute("SELECT * FROM workers WHERE id = %s", (worker_id,))
         worker = cursor.fetchone()
 
     if not worker:
@@ -1689,7 +1689,7 @@ async def worker_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
             SELECT COUNT(*) as total_apps,
                    SUM(CASE WHEN status = 'CONFIRMED' THEN 1 ELSE 0 END) as confirmed_count
             FROM applications
-            WHERE worker_id = ?
+            WHERE worker_id = %s
         """, (worker_id,))
         stats = cursor.fetchone()
 
@@ -1844,7 +1844,7 @@ async def attendance_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
             FROM attendance a
             JOIN workers w ON a.worker_id = w.id
             JOIN events e ON a.event_id = e.id
-            WHERE a.id = ?
+            WHERE a.id = %s
         """, (attendance_id,))
         att = cursor.fetchone()
 
@@ -1915,7 +1915,7 @@ async def manual_checkin(update: Update, context: ContextTypes.DEFAULT_TYPE):
             FROM attendance a
             JOIN workers w ON a.worker_id = w.id
             JOIN events e ON a.event_id = e.id
-            WHERE a.id = ?
+            WHERE a.id = %s
         """, (attendance_id,))
         att = cursor.fetchone()
 
@@ -1931,8 +1931,8 @@ async def manual_checkin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         cursor.execute("""
             UPDATE attendance
-            SET status = 'CHECKED_IN', check_in_time = ?
-            WHERE id = ?
+            SET status = 'CHECKED_IN', check_in_time = %s
+            WHERE id = %s
         """, (now, attendance_id))
         conn.commit()
 
@@ -2018,7 +2018,7 @@ async def manual_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
             FROM attendance a
             JOIN workers w ON a.worker_id = w.id
             JOIN events e ON a.event_id = e.id
-            WHERE a.id = ?
+            WHERE a.id = %s
         """, (attendance_id,))
         att = cursor.fetchone()
 
@@ -2043,8 +2043,8 @@ async def manual_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         cursor.execute("""
             UPDATE attendance
-            SET status = 'COMPLETED', check_out_time = ?, worked_minutes = ?
-            WHERE id = ?
+            SET status = 'COMPLETED', check_out_time = %s, worked_minutes = %s
+            WHERE id = %s
         """, (now, worked_minutes, attendance_id))
         conn.commit()
 
@@ -2061,7 +2061,7 @@ async def manual_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # 출석 정보 다시 조회
         with db.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM attendance WHERE id = ?", (attendance_id,))
+            cursor.execute("SELECT * FROM attendance WHERE id = %s", (attendance_id,))
             attendance = dict(cursor.fetchone())
 
         # 근무 로그 해시 생성
@@ -2181,7 +2181,7 @@ async def view_worker_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     with db.get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT name, face_photo_file_id FROM workers WHERE id = ?", (worker_id,))
+        cursor.execute("SELECT name, face_photo_file_id FROM workers WHERE id = %s", (worker_id,))
         worker = cursor.fetchone()
 
     if not worker or not worker['face_photo_file_id']:
@@ -2474,7 +2474,7 @@ async def blockchain_verify(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 cursor.execute("""
                     SELECT COUNT(*) as count
                     FROM chain_logs
-                    WHERE event_id = ?
+                    WHERE event_id = %s
                 """, (event['id'],))
                 chain_count = cursor.fetchone()['count']
 
@@ -2514,7 +2514,7 @@ async def verify_event(update: Update, context: ContextTypes.DEFAULT_TYPE):
             FROM chain_logs cl
             LEFT JOIN attendance a ON cl.attendance_id = a.id
             LEFT JOIN workers w ON a.worker_id = w.id
-            WHERE cl.event_id = ?
+            WHERE cl.event_id = %s
             ORDER BY cl.recorded_at DESC
         """, (event_id,))
         chain_records = [dict(row) for row in cursor.fetchall()]

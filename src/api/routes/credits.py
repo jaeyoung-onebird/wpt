@@ -8,6 +8,7 @@ import logging
 from ..dependencies import get_db, require_auth, require_admin
 from db import Database
 from wpt_service import wpt_service
+from utils import now_kst
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -21,7 +22,7 @@ def _check_and_give_monthly_bonus(worker_id: int, wallet_address: str, db: Datab
     전월 개근 보너스 확인 및 지급
     매월 첫 체크인 시 호출하여 전월 개근 여부 확인
     """
-    now = datetime.now()
+    now = now_kst()
 
     # 전월 계산
     if now.month == 1:
@@ -205,7 +206,8 @@ async def mint_credits(
     """크레딧 발행 (관리자 전용)"""
     # 근무자 확인
     with db.get_connection() as conn:
-        cursor = conn.cursor()
+        from psycopg2.extras import RealDictCursor
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute("SELECT * FROM workers WHERE id = %s", (data.worker_id,))
         row = cursor.fetchone()
         if not row:
@@ -358,7 +360,8 @@ async def get_worker_credits(
 ):
     """근무자 크레딧 잔액 조회 (관리자 전용)"""
     with db.get_connection() as conn:
-        cursor = conn.cursor()
+        from psycopg2.extras import RealDictCursor
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute("SELECT * FROM workers WHERE id = %s", (worker_id,))
         row = cursor.fetchone()
         if not row:

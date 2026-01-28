@@ -75,7 +75,44 @@ export default function Login() {
       await checkAuth();
       navigate('/profile', { state: { edit: true } });  // 회원가입 후 프로필 수정 모드로 이동
     } catch (error) {
-      alert(error.response?.data?.detail || '회원가입에 실패했습니다');
+      const errorDetail = error.response?.data?.detail;
+      let errorMessage = '회원가입에 실패했습니다';
+
+      if (typeof errorDetail === 'string') {
+        errorMessage = errorDetail;
+      } else if (Array.isArray(errorDetail)) {
+        // Pydantic 검증 에러 처리
+        const fieldNames = {
+          'email': '이메일',
+          'password': '비밀번호',
+          'name': '이름',
+          'phone': '전화번호'
+        };
+        const messages = errorDetail.map(e => {
+          const field = e.loc?.[1] || e.loc?.[0];
+          const fieldName = fieldNames[field] || field;
+          let msg = e.msg || '';
+
+          // 영어 에러 메시지를 한글로 변환
+          if (msg.includes('valid email')) {
+            msg = '올바른 이메일 형식이 아닙니다';
+          } else if (msg.includes('at least')) {
+            const match = msg.match(/at least (\d+)/);
+            if (match) {
+              msg = `최소 ${match[1]}자 이상 입력해주세요`;
+            }
+          } else if (msg.includes('required')) {
+            msg = '필수 입력 항목입니다';
+          }
+
+          return fieldName ? `${fieldName}: ${msg}` : msg;
+        });
+        errorMessage = messages.join('\n');
+      } else if (errorDetail && typeof errorDetail === 'object') {
+        errorMessage = errorDetail.msg || JSON.stringify(errorDetail);
+      }
+
+      alert(errorMessage);
     } finally {
       setLoading(false);
     }

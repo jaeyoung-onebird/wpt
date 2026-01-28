@@ -31,7 +31,7 @@ class EmailRegisterRequest(BaseModel):
     """이메일 회원가입 요청"""
     email: EmailStr
     password: str = Field(..., min_length=6)
-    name: str = Field(..., min_length=2)
+    name: str = Field(..., min_length=1)
     phone: str = Field(..., min_length=10)
     # 선택 프로필 필드
     birth_date: Optional[str] = None

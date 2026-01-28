@@ -4,6 +4,7 @@ from fastapi.responses import FileResponse
 import os
 import uuid
 import logging
+import mimetypes
 from datetime import datetime
 
 from ..dependencies import get_db, require_auth, require_admin
@@ -15,6 +16,14 @@ from wpt_service import wpt_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _get_image_media_type(file_path: str) -> str:
+    """파일 경로에서 이미지 MIME 타입 추출"""
+    mime_type, _ = mimetypes.guess_type(file_path)
+    if mime_type and mime_type.startswith("image/"):
+        return mime_type
+    return "image/jpeg"  # 기본값
 
 # 첫 가입 보너스 (WPT)
 REGISTRATION_BONUS = 5
@@ -35,19 +44,20 @@ def _is_profile_complete(worker: dict) -> bool:
 
 def _give_profile_completion_bonus(worker_id: int, db: Database) -> bool:
     """프로필 완성 보너스 WPT 지급 (이미 받은 경우 False 반환)"""
+    from psycopg2.extras import RealDictCursor
     # 이미 받았는지 확인 (credit_history에서)
     with db.get_connection() as conn:
-        cursor = conn.cursor()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute("""
             SELECT id FROM credit_history
-            WHERE worker_id = ? AND tx_type = 'PROFILE_BONUS'
+            WHERE worker_id = %s AND tx_type = 'PROFILE_BONUS'
         """, (worker_id,))
         if cursor.fetchone():
             return False  # 이미 받음
 
     # 근무자 정보 조회
     with db.get_connection() as conn:
-        cursor = conn.cursor()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute("SELECT * FROM workers WHERE id = %s", (worker_id,))
         row = cursor.fetchone()
         if not row:
@@ -305,7 +315,7 @@ async def get_my_photo(
     if not photo_path or not os.path.exists(photo_path):
         raise HTTPException(status_code=404, detail="사진이 등록되지 않았습니다")
 
-    return FileResponse(photo_path, media_type="image/jpeg")
+    return FileResponse(photo_path, media_type=_get_image_media_type(photo_path))
 
 
 @router.delete("/me")
@@ -396,7 +406,8 @@ async def get_worker(
     """근무자 상세 정보 (관리자 전용)"""
     # worker_id로 직접 조회
     with db.get_connection() as conn:
-        cursor = conn.cursor()
+        from psycopg2.extras import RealDictCursor
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute("SELECT * FROM workers WHERE id = %s", (worker_id,))
         row = cursor.fetchone()
         if not row:
@@ -414,7 +425,8 @@ async def get_worker_photo(
 ):
     """근무자 얼굴사진 조회 (관리자 전용)"""
     with db.get_connection() as conn:
-        cursor = conn.cursor()
+        from psycopg2.extras import RealDictCursor
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute(
             "SELECT face_photo_file_id FROM workers WHERE id = %s",
             (worker_id,)
@@ -430,7 +442,7 @@ async def get_worker_photo(
     # 이미지 파일 반환
     return FileResponse(
         photo_path,
-        media_type="image/jpeg"
+        media_type=_get_image_media_type(photo_path)
     )
 
 
@@ -443,7 +455,8 @@ async def admin_update_worker(
 ):
     """근무자 정보 수정 (관리자 전용)"""
     with db.get_connection() as conn:
-        cursor = conn.cursor()
+        from psycopg2.extras import RealDictCursor
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute("SELECT * FROM workers WHERE id = %s", (worker_id,))
         row = cursor.fetchone()
         if not row:
@@ -457,7 +470,8 @@ async def admin_update_worker(
         db.update_worker(worker_id, **update_data)
 
     with db.get_connection() as conn:
-        cursor = conn.cursor()
+        from psycopg2.extras import RealDictCursor
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute("SELECT * FROM workers WHERE id = %s", (worker_id,))
         updated = dict(cursor.fetchone())
 
@@ -472,7 +486,8 @@ async def admin_delete_worker(
 ):
     """근무자 삭제 (관리자 전용)"""
     with db.get_connection() as conn:
-        cursor = conn.cursor()
+        from psycopg2.extras import RealDictCursor
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute("SELECT * FROM workers WHERE id = %s", (worker_id,))
         row = cursor.fetchone()
         if not row:

@@ -196,6 +196,34 @@ export default function Blockchain() {
     }
   };
 
+  const handleAdminDownloadCertificate = async (log) => {
+    if (!confirm(`${log.worker_name}님의 근무증명서를 다운로드하시겠습니까?`)) {
+      return;
+    }
+
+    setDownloading(log.id);
+    try {
+      const response = await chainAPI.adminDownloadCertificate(log.id);
+
+      // PDF 다운로드
+      const blob = new Blob([response.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `근무증명서_${log.worker_name}_${log.event_title}_${log.event_date}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+
+      alert('근무증명서가 다운로드되었습니다.');
+    } catch (error) {
+      alert(error.response?.data?.detail || '다운로드에 실패했습니다');
+    } finally {
+      setDownloading(null);
+    }
+  };
+
   const getStatusChip = (log) => {
     if (log.check_out_time) return <span className="chip-completed">퇴근</span>;
     if (log.check_in_time) return <span className="chip-confirmed">근무</span>;
@@ -448,7 +476,7 @@ export default function Blockchain() {
 
                     {/* TX Hash */}
                     {log.tx_hash ? (
-                      <div className="flex items-center justify-between text-xs bg-gray-50 rounded-lg px-3 py-2">
+                      <div className="flex items-center justify-between text-xs bg-gray-50 rounded-lg px-3 py-2 mb-2">
                         <span className="text-gray-500">TX</span>
                         <button
                           onClick={() => openPolygonscan(log.tx_hash)}
@@ -458,9 +486,20 @@ export default function Blockchain() {
                         </button>
                       </div>
                     ) : (
-                      <div className="text-xs text-gray-400 bg-gray-50 rounded-lg px-3 py-2">
+                      <div className="text-xs text-gray-400 bg-gray-50 rounded-lg px-3 py-2 mb-2">
                         블록체인 기록 대기중
                       </div>
+                    )}
+
+                    {/* 관리자 다운로드 버튼 */}
+                    {log.tx_hash && (
+                      <button
+                        onClick={() => handleAdminDownloadCertificate(log)}
+                        disabled={downloading === log.id}
+                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm py-3 rounded-xl disabled:bg-gray-300 transition-colors"
+                      >
+                        {downloading === log.id ? '다운로드 중...' : '블록체인 업무증명서 다운로드'}
+                      </button>
                     )}
                   </div>
                 ))}
@@ -551,9 +590,9 @@ export default function Blockchain() {
                     <button
                       onClick={() => handleDownloadCertificate(log)}
                       disabled={downloading === log.id || tokens < 1}
-                      className="flex-1 btn-primary text-xs py-2"
+                      className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs py-3 rounded-xl disabled:bg-gray-300 transition-colors"
                     >
-                      {downloading === log.id ? '다운로드...' : '증명서 (1크레딧)'}
+                      {downloading === log.id ? '다운로드...' : '블록체인 업무증명서 (1크레딧)'}
                     </button>
                   )}
                 </div>
@@ -641,9 +680,9 @@ export default function Blockchain() {
                   <button
                     onClick={() => handleDownloadCertificate(selectedLog)}
                     disabled={downloading === selectedLog.id || tokens < 1}
-                    className="w-full py-3 bg-purple-600 text-white rounded-xl font-medium hover:bg-purple-700 disabled:bg-gray-300"
+                    className="w-full py-3 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 disabled:bg-gray-300 transition-colors"
                   >
-                    {downloading === selectedLog.id ? '다운로드 중...' : tokens < 1 ? '크레딧 부족' : `근무증명서 다운로드 (1크레딧)`}
+                    {downloading === selectedLog.id ? '다운로드 중...' : tokens < 1 ? '크레딧 부족' : `블록체인 업무증명서 다운로드 (1크레딧)`}
                   </button>
                 )}
                 <button

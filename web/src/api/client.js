@@ -137,6 +137,7 @@ export const chainAPI = {
   getMyLogs: () => api.get('/api/chain/logs/me'),
   getTokens: () => api.get('/api/chain/tokens'),
   downloadCertificate: (logId) => api.post(`/api/chain/certificate/${logId}`, {}, { responseType: 'blob' }),
+  adminDownloadCertificate: (logId) => api.post(`/api/chain/certificate/admin/${logId}`, {}, { responseType: 'blob' }),
   verify: (txHash) => api.post('/api/chain/verify', { tx_hash: txHash }),
   getStatus: () => api.get('/api/chain/status'),
 };

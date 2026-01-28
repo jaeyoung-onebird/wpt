@@ -1,6 +1,9 @@
 """Worker Schemas"""
-from datetime import datetime
-from pydantic import BaseModel
+from datetime import datetime, timezone, timedelta
+from pydantic import BaseModel, field_serializer
+
+# 한국 시간대 (UTC+9)
+KST = timezone(timedelta(hours=9))
 
 
 class WorkerCreate(BaseModel):
@@ -49,6 +52,19 @@ class WorkerResponse(BaseModel):
     face_photo_file_id: str | None = None
     contract_signed: bool = False
     created_at: datetime | str | None = None
+
+    @field_serializer('created_at')
+    def serialize_created_at(self, dt: datetime | str | None) -> str | None:
+        if dt is None:
+            return None
+        if isinstance(dt, str):
+            return dt[:16]  # YYYY-MM-DD HH:MM 까지만
+        # naive datetime이면 UTC로 간주
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        # KST로 변환하고 분까지만 표시
+        kst_dt = dt.astimezone(KST)
+        return kst_dt.strftime("%Y-%m-%d %H:%M")
 
     class Config:
         from_attributes = True

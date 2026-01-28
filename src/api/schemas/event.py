@@ -1,6 +1,10 @@
 """Event Schemas"""
-from pydantic import BaseModel
+from pydantic import BaseModel, field_serializer
 from enum import Enum
+from datetime import datetime, timezone, timedelta
+
+# 한국 시간대 (UTC+9)
+KST = timezone(timedelta(hours=9))
 
 
 class EventStatus(str, Enum):
@@ -80,9 +84,20 @@ class EventResponse(BaseModel):
     manager_phone: str | None = None
     status: str = "OPEN"
     created_by: int | None = None
-    created_at: str | None = None
+    created_at: datetime | None = None
     application_count: int = 0
     confirmed_count: int = 0
+
+    @field_serializer('created_at')
+    def serialize_created_at(self, dt: datetime | None) -> str | None:
+        if dt is None:
+            return None
+        # naive datetime이면 UTC로 간주
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        # KST로 변환하고 분까지만 표시
+        kst_dt = dt.astimezone(KST)
+        return kst_dt.strftime("%Y-%m-%d %H:%M")
 
     class Config:
         from_attributes = True

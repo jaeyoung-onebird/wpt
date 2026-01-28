@@ -15,6 +15,8 @@ from utils import parse_deep_link_payload, validate_phone, format_phone, now_kst
 from contract_sender import send_contract_link
 from models import ApplicationStatus, AttendanceStatus
 from datetime import datetime, timedelta
+from wpt_service import wpt_service
+import threading
 
 # 환경변수 로드
 load_dotenv('config/.env')
@@ -45,6 +47,63 @@ db = Database(os.getenv('DATABASE_URL', 'postgresql://ubuntu:ubuntu123@localhost
 def get_worker(telegram_id: int):
     """근무자 조회"""
     return db.get_worker_by_telegram_id(telegram_id)
+
+
+# 가입 보너스
+REGISTRATION_BONUS = 3
+
+
+def _give_registration_bonus_sync(worker_id: int):
+    """텔레그램 가입 보너스 WPT 지급 (백그라운드 실행)"""
+    try:
+        # 지갑 주소 생성
+        wallet_address = wpt_service.get_deterministic_address(worker_id)
+        db.set_worker_wallet_address(worker_id, wallet_address)
+
+        tx_hash = None
+        reason = "신규 가입 환영 보너스"
+
+        if wpt_service.enabled:
+            # WPT 토큰 발행 (블록체인 호출)
+            result = wpt_service.mint_credits(
+                wallet_address,
+                REGISTRATION_BONUS,
+                reason
+            )
+            if result["success"]:
+                tx_hash = result.get("tx_hash")
+                logger.info(f"Registration bonus: {REGISTRATION_BONUS} WPT to worker {worker_id}")
+            else:
+                logger.error(f"Failed to mint registration bonus: {result.get('error')}")
+
+        # DB 토큰 추가
+        db.add_tokens(worker_id, REGISTRATION_BONUS)
+
+        # 새 잔액 조회
+        if wpt_service.enabled:
+            new_balance = wpt_service.get_balance(wallet_address)
+        else:
+            new_balance = db.get_worker_tokens(worker_id)
+
+        # 거래 내역 저장
+        db.create_credit_history(
+            worker_id=worker_id,
+            amount=REGISTRATION_BONUS,
+            balance_after=new_balance,
+            tx_type="SIGNUP_BONUS",
+            reason=reason,
+            tx_hash=tx_hash
+        )
+        logger.info(f"Registration bonus completed for worker {worker_id}")
+    except Exception as e:
+        logger.error(f"Failed to give registration bonus to worker {worker_id}: {e}")
+
+
+def _give_registration_bonus_background(worker_id: int):
+    """백그라운드 스레드에서 가입 보너스 지급"""
+    thread = threading.Thread(target=_give_registration_bonus_sync, args=(worker_id,))
+    thread.daemon = True
+    thread.start()
 
 
 def get_main_keyboard():
@@ -400,6 +459,9 @@ async def reg_contract(update: Update, context: ContextTypes.DEFAULT_TYPE):
             bank_account=context.user_data.get('reg_account'),
             contract_signed=True
         )
+
+        # 가입 보너스 지급 (백그라운드에서 비동기 처리)
+        _give_registration_bonus_background(worker_id)
 
         # 임시 파일을 worker_id로 변경
         if temp_photo_path and context.user_data.get('reg_face_photo_temp'):
@@ -779,7 +841,7 @@ async def application_detail(update: Update, context: ContextTypes.DEFAULT_TYPE)
                    e.pay_description
             FROM applications a
             JOIN events e ON a.event_id = e.id
-            WHERE a.id = ? AND a.worker_id = ?
+            WHERE a.id = %s AND a.worker_id = %s
         """, (app_id, worker['id']))
         app = cursor.fetchone()
 
@@ -841,7 +903,7 @@ async def cancel_application(update: Update, context: ContextTypes.DEFAULT_TYPE)
             SELECT a.*, e.title as event_title
             FROM applications a
             JOIN events e ON a.event_id = e.id
-            WHERE a.id = ? AND a.worker_id = ?
+            WHERE a.id = %s AND a.worker_id = %s
         """, (app_id, worker['id']))
         app = cursor.fetchone()
 
@@ -864,7 +926,7 @@ async def cancel_application(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # 지원 삭제
     with db.get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM applications WHERE id = ?", (app_id,))
+        cursor.execute("DELETE FROM applications WHERE id = %s", (app_id,))
         conn.commit()
 
     logger.info(f"Application cancelled: app_id={app_id}, worker_id={worker['id']}")
@@ -1276,7 +1338,7 @@ async def my_attendance_list(update: Update, context: ContextTypes.DEFAULT_TYPE)
             SELECT a.*, e.title as event_title, e.event_date, e.event_time, e.location
             FROM attendance a
             JOIN events e ON a.event_id = e.id
-            WHERE a.worker_id = ?
+            WHERE a.worker_id = %s
             ORDER BY e.event_date DESC, a.created_at DESC
             LIMIT 20
         """, (worker['id'],))
@@ -1344,7 +1406,7 @@ async def attendance_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
             FROM attendance a
             JOIN events e ON a.event_id = e.id
             JOIN workers w ON a.worker_id = w.id
-            WHERE a.id = ?
+            WHERE a.id = %s
         """, (attendance_id,))
         att = cursor.fetchone()
 
@@ -1454,7 +1516,7 @@ async def do_checkin(update: Update, context: ContextTypes.DEFAULT_TYPE):
             SELECT a.*, e.title as event_title
             FROM attendance a
             JOIN events e ON a.event_id = e.id
-            WHERE a.id = ?
+            WHERE a.id = %s
         """, (attendance_id,))
         attendance = cursor.fetchone()
 
@@ -1480,7 +1542,7 @@ async def do_checkin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 출근 시간 조회
     with db.get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT check_in_time FROM attendance WHERE id = ?", (attendance_id,))
+        cursor.execute("SELECT check_in_time FROM attendance WHERE id = %s", (attendance_id,))
         result = cursor.fetchone()
         check_in_time = result['check_in_time'] if result else None
 
@@ -1520,7 +1582,7 @@ async def do_checkin(update: Update, context: ContextTypes.DEFAULT_TYPE):
             SELECT a.*, e.title as event_title, e.event_date, e.event_time, e.location
             FROM attendance a
             JOIN events e ON a.event_id = e.id
-            WHERE a.worker_id = ?
+            WHERE a.worker_id = %s
             ORDER BY e.event_date DESC, a.created_at DESC
             LIMIT 20
         """, (worker['id'],))
@@ -1586,7 +1648,7 @@ async def do_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
             SELECT a.*, e.title as event_title, e.pay_amount
             FROM attendance a
             JOIN events e ON a.event_id = e.id
-            WHERE a.id = ?
+            WHERE a.id = %s
         """, (attendance_id,))
         attendance = cursor.fetchone()
 
@@ -1622,10 +1684,7 @@ async def do_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
         event = db.get_event(attendance['event_id'])
 
         # 출석 정보 다시 조회 (worked_minutes 포함)
-        with db.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM attendance WHERE id = ?", (attendance_id,))
-            attendance = dict(cursor.fetchone())
+        attendance = db.get_attendance_by_id(attendance_id)
 
         # 근무 로그 해시 생성
         log_data = {
@@ -1707,7 +1766,7 @@ async def do_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
             SELECT a.*, e.title as event_title, e.event_date, e.event_time, e.location
             FROM attendance a
             JOIN events e ON a.event_id = e.id
-            WHERE a.worker_id = ?
+            WHERE a.worker_id = %s
             ORDER BY e.event_date DESC, a.created_at DESC
             LIMIT 20
         """, (worker['id'],))

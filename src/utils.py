@@ -27,12 +27,32 @@ def now_kst() -> datetime:
 
 def now_kst_str() -> str:
     """
-    현재 한국 시간을 문자열로 반환 (YYYY-MM-DD HH:MM:SS 형식)
+    현재 한국 시간을 문자열로 반환 (YYYY-MM-DD HH:MM 형식)
 
     Returns:
         str: 한국 시간 문자열
     """
-    return now_kst().strftime("%Y-%m-%d %H:%M:%S")
+    return now_kst().strftime("%Y-%m-%d %H:%M")
+
+
+def to_kst_str(dt: datetime) -> str:
+    """
+    datetime을 한국 시간 문자열로 변환 (YYYY-MM-DD HH:MM 형식)
+
+    Args:
+        dt: datetime 객체 (naive이면 UTC로 간주)
+
+    Returns:
+        str: 한국 시간 문자열
+    """
+    if dt is None:
+        return None
+    # naive datetime이면 UTC로 간주
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    # KST로 변환
+    kst_dt = dt.astimezone(KST)
+    return kst_dt.strftime("%Y-%m-%d %H:%M")
 
 
 def generate_worker_uid_hash(worker_id: int, salt: str) -> str:

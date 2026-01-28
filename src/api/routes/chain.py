@@ -4,9 +4,10 @@ from fastapi.responses import StreamingResponse
 from io import BytesIO
 from datetime import datetime
 
-from ..dependencies import get_db, require_auth, require_worker
+from ..dependencies import get_db, require_auth, require_worker, require_admin
 from ..schemas.attendance import ChainLogResponse
 from db import Database
+from utils import now_kst
 
 router = APIRouter()
 
@@ -163,8 +164,39 @@ async def download_certificate(
         raise HTTPException(status_code=500, detail=f"증명서 생성 실패: {str(e)} (크레딧 차감됨, 관리자 문의 필요)")
 
 
+@router.post("/certificate/admin/{log_id}")
+async def admin_download_certificate(
+    log_id: int,
+    admin: dict = Depends(require_admin),
+    db: Database = Depends(get_db)
+):
+    """관리자용 근무증명서 다운로드 (크레딧 차감 없음)"""
+    # 로그 조회
+    log = db.get_chain_log_by_id(log_id)
+    if not log:
+        raise HTTPException(status_code=404, detail="기록을 찾을 수 없습니다")
+
+    # 근무자 정보 조회
+    worker = db.get_worker_by_id(log["worker_id"])
+    if not worker:
+        raise HTTPException(status_code=404, detail="근무자 정보를 찾을 수 없습니다")
+
+    # PDF 생성
+    try:
+        pdf_bytes = generate_certificate_pdf(worker, log)
+        return StreamingResponse(
+            BytesIO(pdf_bytes),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename=certificate_{log_id}.pdf"
+            }
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"증명서 생성 실패: {str(e)}")
+
+
 def generate_certificate_pdf(worker: dict, log: dict) -> bytes:
-    """근무증명서 PDF 생성 (Toss 스타일)"""
+    """블록체인 업무증명서 PDF 생성"""
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import mm
     from reportlab.pdfgen import canvas
@@ -173,16 +205,7 @@ def generate_certificate_pdf(worker: dict, log: dict) -> bytes:
     from reportlab.lib.colors import HexColor
     import os
     import qrcode
-
-    # 디자인 토큰
-    PRIMARY_BLUE = "#2563EB"
-    DARK_NAVY = "#1E3A5F"
-    GRAY_TEXT = "#64748B"
-    LIGHT_BG = "#F8FAFC"
-    BORDER_COLOR = "#E2E8F0"
-    SUCCESS_GREEN = "#059669"
-    TEXT_DARK = "#1E293B"
-    TEXT_BLACK = "#0F172A"
+    import hashlib
 
     # 폰트 등록
     font_path = "/usr/share/fonts/truetype/nanum/NanumGothic.ttf"
@@ -213,194 +236,209 @@ def generate_certificate_pdf(worker: dict, log: dict) -> bytes:
     c = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
 
-    # 배경
-    c.setFillColor(HexColor(LIGHT_BG))
-    c.rect(0, 0, width, height, fill=1)
+    # 색상 정의 (네이비, 그레이, 블랙, 화이트 톤)
+    NAVY = "#1E3A5F"
+    NAVY_DARK = "#152A45"
+    BLACK = "#1F2937"
+    DARK_GRAY = "#374151"
+    GRAY = "#6B7280"
+    LIGHT_GRAY = "#9CA3AF"
+    WHITE = "#FFFFFF"
+    BG_LIGHT = "#F3F4F6"
 
     # 마진 설정
-    margin_x = 25 * mm
+    margin_x = 20 * mm
+    margin_y = 12 * mm
     content_width = width - 2 * margin_x
 
-    # 헤더 영역
-    y = height - 35 * mm
-    c.setFillColor(HexColor(DARK_NAVY))
-    c.setFont(bold_font, 24)
-    c.drawCentredString(width / 2, y, "근무증명서")
+    # 문서번호 생성
+    tx_hash = log.get("tx_hash", "")
+    if tx_hash:
+        doc_number = f"WPC-{tx_hash[-8:].upper()}"
+    else:
+        doc_number = f"WPC-{hashlib.md5(str(log.get('id', 0)).encode()).hexdigest()[:8].upper()}"
 
-    y -= 8 * mm
-    c.setFillColor(HexColor(GRAY_TEXT))
-    c.setFont(font_name, 10)
-    c.drawCentredString(width / 2, y, "Certificate of Employment")
+    # ==================== 상단 헤더 ====================
+    header_height = 38 * mm
+    c.setFillColor(HexColor(NAVY))
+    c.rect(0, height - header_height, width, header_height, stroke=0, fill=1)
 
-    # 블록체인 검증 배지
-    y -= 12 * mm
-    badge_width = 45 * mm
-    badge_height = 7 * mm
-    badge_x = (width - badge_width) / 2
-    c.setFillColor(HexColor("#DCFCE7"))
-    c.roundRect(badge_x, y - 2 * mm, badge_width, badge_height, 3 * mm, fill=1, stroke=0)
-    c.setFillColor(HexColor(SUCCESS_GREEN))
-    c.setFont(bold_font, 9)
-    c.drawCentredString(width / 2, y, "Blockchain Verified")
+    # 헤더 하단 장식선
+    c.setFillColor(HexColor(NAVY_DARK))
+    c.rect(0, height - header_height, width, 2*mm, stroke=0, fill=1)
 
-    # === 카드 섹션 그리기 함수 ===
-    def draw_card(y_pos, title, items, card_height=None):
-        """카드 스타일 섹션 그리기"""
-        padding = 5 * mm
-        item_height = 8 * mm
-        if card_height is None:
-            card_height = 12 * mm + len(items) * item_height
+    # 제목
+    y = height - 15 * mm
+    c.setFillColor(HexColor(WHITE))
+    c.setFont(bold_font, 22)
+    c.drawCentredString(width / 2, y, "블록체인 업무증명서")
 
-        # 카드 배경
-        c.setFillColor(HexColor("#FFFFFF"))
-        c.setStrokeColor(HexColor(BORDER_COLOR))
+    y -= 7 * mm
+    c.setFont(font_name, 9)
+    c.setFillColor(HexColor("#D1D5DB"))
+    c.drawCentredString(width / 2, y, "Blockchain Work Certificate")
+
+    y -= 6 * mm
+    c.setFont(font_name, 8)
+    c.drawCentredString(width / 2, y, f"문서번호: {doc_number}")
+
+    # ==================== 본문 ====================
+    y = height - header_height - 8 * mm
+    row_height = 7 * mm
+    label_width = 28 * mm
+
+    def draw_section(y_pos, title, color):
+        c.setFillColor(HexColor(color))
+        c.roundRect(margin_x, y_pos - 5*mm, 3*mm, 5*mm, 1*mm, stroke=0, fill=1)
+        c.setFillColor(HexColor(BLACK))
+        c.setFont(bold_font, 10)
+        c.drawString(margin_x + 5*mm, y_pos - 4*mm, title)
+        return y_pos - 9 * mm
+
+    def draw_row(y_pos, label, value):
+        c.setStrokeColor(HexColor("#E5E7EB"))
         c.setLineWidth(0.5)
-        c.roundRect(margin_x, y_pos - card_height, content_width, card_height, 3 * mm, fill=1, stroke=1)
+        # 라벨
+        c.setFillColor(HexColor(BG_LIGHT))
+        c.rect(margin_x, y_pos - row_height, label_width, row_height, stroke=1, fill=1)
+        # 값
+        c.setFillColor(HexColor(WHITE))
+        c.rect(margin_x + label_width, y_pos - row_height, content_width - label_width, row_height, stroke=1, fill=1)
+        # 텍스트
+        c.setFillColor(HexColor(DARK_GRAY))
+        c.setFont(bold_font, 8)
+        c.drawString(margin_x + 2*mm, y_pos - 5*mm, label)
+        c.setFillColor(HexColor(BLACK))
+        c.setFont(font_name, 8)
+        c.drawString(margin_x + label_width + 3*mm, y_pos - 5*mm, str(value) if value else "-")
+        return y_pos - row_height
 
-        # 카드 제목
-        title_y = y_pos - 8 * mm
-        c.setFillColor(HexColor(TEXT_DARK))
-        c.setFont(bold_font, 11)
-        c.drawString(margin_x + padding, title_y, title)
+    # 인적사항
+    y = draw_section(y, "인적사항", NAVY)
+    y = draw_row(y, "성명", worker.get("name", "-"))
+    y = draw_row(y, "생년월일", worker.get("birth_date", "-") or "-")
+    y = draw_row(y, "연락처", worker.get("phone", "-"))
 
-        # 항목들
-        item_y = title_y - 10 * mm
-        for label, value in items:
-            c.setFillColor(HexColor(GRAY_TEXT))
-            c.setFont(font_name, 9)
-            c.drawString(margin_x + padding, item_y, label)
+    # 근무내용
+    y -= 5 * mm
+    y = draw_section(y, "근무내용", DARK_GRAY)
 
-            c.setFillColor(HexColor(TEXT_BLACK))
-            c.setFont(font_name, 10)
-            c.drawRightString(margin_x + content_width - padding, item_y, str(value))
-            item_y -= item_height
+    from datetime import datetime as dt
 
-        return y_pos - card_height - 5 * mm
+    def format_time(time_val):
+        """시간 값을 HH:MM 형식으로 변환"""
+        if not time_val:
+            return "-"
+        # datetime 객체인 경우
+        if isinstance(time_val, dt):
+            return time_val.strftime("%H:%M")
+        # 문자열인 경우
+        if isinstance(time_val, str):
+            if "T" in time_val:
+                return time_val.split("T")[1][:5]
+            elif " " in time_val:
+                return time_val.split(" ")[1][:5]
+            elif ":" in time_val:
+                return time_val[:5]
+        return "-"
 
-    # === 1. 근무자 정보 ===
-    y -= 20 * mm
-    worker_items = [
-        ("이름", worker.get("name", "-")),
-        ("생년월일", worker.get("birth_date", "-") or "-"),
-        ("연락처", worker.get("phone", "-")),
-    ]
-    y = draw_card(y, "근무자 정보", worker_items)
-
-    # === 2. 근무 내용 ===
-    work_items = [
-        ("행사명", log.get("event_title", "-")),
-        ("근무지", log.get("location", "-") or "-"),
-    ]
-    y = draw_card(y, "근무 내용", work_items)
-
-    # === 3. 근무 기간 및 시간 ===
-    check_in = log.get("check_in_time", "-")
-    check_out = log.get("check_out_time", "-")
-
-    # 시간 포맷팅
-    if check_in and isinstance(check_in, str) and " " in check_in:
-        check_in_time = check_in.split(" ")[1][:5]
-    elif check_in and isinstance(check_in, str) and len(check_in) >= 5:
-        check_in_time = check_in[:5]
-    else:
-        check_in_time = "-"
-
-    if check_out and isinstance(check_out, str) and " " in check_out:
-        check_out_time = check_out.split(" ")[1][:5]
-    elif check_out and isinstance(check_out, str) and len(check_out) >= 5:
-        check_out_time = check_out[:5]
-    else:
-        check_out_time = "-"
+    check_in = log.get("check_in_time")
+    check_out = log.get("check_out_time")
+    check_in_time = format_time(check_in)
+    check_out_time = format_time(check_out)
 
     worked_minutes = log.get("worked_minutes", 0) or 0
     hours = worked_minutes // 60
     mins = worked_minutes % 60
 
-    time_items = [
-        ("근무일", log.get("event_date", "-")),
-        ("근무시간", f"{check_in_time} ~ {check_out_time}"),
-        ("총 근무시간", f"{hours}시간 {mins}분"),
-    ]
-    y = draw_card(y, "근무 기간 및 시간", time_items)
+    y = draw_row(y, "행사명", log.get("event_title", "-"))
+    y = draw_row(y, "근무지", log.get("location", "-") or "-")
+    y = draw_row(y, "근무일", log.get("event_date", "-"))
+    y = draw_row(y, "근무시간", f"{check_in_time} ~ {check_out_time} ({hours}시간 {mins}분)")
 
-    # === 4. 급여 정보 ===
-    pay_amount = log.get("pay_amount", 0) or 0
+    # 급여내역
+    y -= 5 * mm
+    y = draw_section(y, "급여내역", GRAY)
 
-    # 근무시간 기준 급여 계산 (8시간 기준)
-    if worked_minutes > 0 and pay_amount > 0:
-        # 일당 기준으로 시간당 급여 계산 (8시간 기준)
-        hourly_rate = pay_amount / 8
-        gross_pay = int((worked_minutes / 60) * hourly_rate)
-    else:
-        hourly_rate = 0
-        gross_pay = pay_amount
-
-    tax_rate = 0.033
-    tax_amount = int(gross_pay * tax_rate)
+    # 행사 등록 금액 그대로 사용
+    gross_pay = log.get("pay_amount", 0) or 0
+    tax_amount = int(gross_pay * 0.033)
     net_pay = gross_pay - tax_amount
 
-    pay_items = [
-        ("시급", f"{int(hourly_rate):,}원" if hourly_rate > 0 else "-"),
-        ("총 급여 (세전)", f"{gross_pay:,}원"),
-        ("세금공제 (3.3%)", f"-{tax_amount:,}원"),
-        ("실수령액", f"{net_pay:,}원"),
-    ]
-    y = draw_card(y, "급여 정보", pay_items)
+    y = draw_row(y, "총급여", f"{gross_pay:,}원 (세전)")
+    y = draw_row(y, "공제액", f"{tax_amount:,}원 (3.3%)")
 
-    # === 5. 블록체인 검증 정보 + QR 코드 ===
-    chain_card_height = 45 * mm
-    padding = 5 * mm
+    # 실수령액 강조
+    c.setStrokeColor(HexColor("#E5E7EB"))
+    c.setFillColor(HexColor(BG_LIGHT))
+    c.rect(margin_x, y - row_height, label_width, row_height, stroke=1, fill=1)
+    c.setFillColor(HexColor("#E5E7EB"))
+    c.rect(margin_x + label_width, y - row_height, content_width - label_width, row_height, stroke=1, fill=1)
+    c.setFillColor(HexColor(DARK_GRAY))
+    c.setFont(bold_font, 8)
+    c.drawString(margin_x + 2*mm, y - 5*mm, "실수령액")
+    c.setFillColor(HexColor(BLACK))
+    c.setFont(bold_font, 9)
+    c.drawString(margin_x + label_width + 3*mm, y - 5*mm, f"{net_pay:,}원")
+    y -= row_height
 
-    # 카드 배경
-    c.setFillColor(HexColor("#FFFFFF"))
-    c.setStrokeColor(HexColor(BORDER_COLOR))
-    c.setLineWidth(0.5)
-    c.roundRect(margin_x, y - chain_card_height, content_width, chain_card_height, 3 * mm, fill=1, stroke=1)
+    # 블록체인 검증
+    y -= 5 * mm
+    y = draw_section(y, "블록체인 검증", NAVY_DARK)
 
-    # 카드 제목
-    title_y = y - 8 * mm
-    c.setFillColor(HexColor(TEXT_DARK))
-    c.setFont(bold_font, 11)
-    c.drawString(margin_x + padding, title_y, "블록체인 검증 정보")
-
-    # 블록체인 정보
-    tx_hash = log.get("tx_hash", "Pending")
     block_num = log.get("block_number", "-")
-    network = log.get("network", "amoy")
+    y = draw_row(y, "네트워크", "Polygon Amoy Testnet")
+    y = draw_row(y, "블록번호", str(block_num))
 
-    info_y = title_y - 12 * mm
-    c.setFillColor(HexColor(GRAY_TEXT))
-    c.setFont(font_name, 8)
-
-    c.drawString(margin_x + padding, info_y, "TX Hash")
-    c.setFillColor(HexColor(TEXT_BLACK))
-    c.setFont(font_name, 8)
-    if tx_hash and len(tx_hash) > 30:
-        c.drawString(margin_x + padding + 20 * mm, info_y, f"{tx_hash[:28]}...")
+    # TX Hash
+    c.setStrokeColor(HexColor("#E5E7EB"))
+    c.setFillColor(HexColor(BG_LIGHT))
+    c.rect(margin_x, y - row_height, label_width, row_height, stroke=1, fill=1)
+    c.setFillColor(HexColor(WHITE))
+    c.rect(margin_x + label_width, y - row_height, content_width - label_width, row_height, stroke=1, fill=1)
+    c.setFillColor(HexColor(DARK_GRAY))
+    c.setFont(bold_font, 8)
+    c.drawString(margin_x + 2*mm, y - 5*mm, "TX Hash")
+    c.setFillColor(HexColor(NAVY))
+    c.setFont(font_name, 6)
+    if tx_hash:
+        display_hash = f"{tx_hash[:30]}...{tx_hash[-12:]}" if len(tx_hash) > 45 else tx_hash
+        c.drawString(margin_x + label_width + 3*mm, y - 5*mm, display_hash)
     else:
-        c.drawString(margin_x + padding + 20 * mm, info_y, tx_hash or "-")
+        c.setFillColor(HexColor(LIGHT_GRAY))
+        c.drawString(margin_x + label_width + 3*mm, y - 5*mm, "Pending")
+    y -= row_height
 
-    info_y -= 6 * mm
-    c.setFillColor(HexColor(GRAY_TEXT))
-    c.drawString(margin_x + padding, info_y, "Network")
-    c.setFillColor(HexColor(TEXT_BLACK))
-    c.drawString(margin_x + padding + 20 * mm, info_y, "Polygon Amoy Testnet")
+    # ==================== 증명 문구 ====================
+    y -= 10 * mm
+    c.setFillColor(HexColor(BLACK))
+    c.setFont(font_name, 10)
+    c.drawCentredString(width / 2, y, "위 내용이 사실임을 블록체인 기록으로 증명합니다.")
 
-    info_y -= 6 * mm
-    c.setFillColor(HexColor(GRAY_TEXT))
-    c.drawString(margin_x + padding, info_y, "Block")
-    c.setFillColor(HexColor(TEXT_BLACK))
-    c.drawString(margin_x + padding + 20 * mm, info_y, str(block_num))
+    # ==================== 발급정보 ====================
+    y -= 12 * mm
+    today = now_kst().strftime("%Y년 %m월 %d일")
+    c.setFont(font_name, 10)
+    c.drawCentredString(width / 2, y, today)
 
-    # QR 코드 생성
-    if tx_hash and tx_hash != "Pending":
+    y -= 10 * mm
+    c.setFillColor(HexColor(NAVY))
+    c.setFont(bold_font, 13)
+    c.drawCentredString(width / 2, y, "WorkProof Chain")
+
+    y -= 5 * mm
+    c.setFont(font_name, 8)
+    c.setFillColor(HexColor(GRAY))
+    c.drawCentredString(width / 2, y, "블록체인 기반 업무이력 증명 시스템")
+
+    # ==================== QR 코드 ====================
+    if tx_hash:
         qr_url = f"https://amoy.polygonscan.com/tx/{tx_hash}"
-        qr = qrcode.QRCode(version=1, box_size=10, border=2)
+        qr = qrcode.QRCode(version=1, box_size=6, border=2)
         qr.add_data(qr_url)
         qr.make(fit=True)
-        qr_img = qr.make_image(fill_color="black", back_color="white")
+        qr_img = qr.make_image(fill_color="#1E3A5F", back_color="white")
 
-        # QR 이미지를 바이트로 변환
         qr_buffer = BytesIO()
         qr_img.save(qr_buffer, format='PNG')
         qr_buffer.seek(0)
@@ -408,30 +446,20 @@ def generate_certificate_pdf(worker: dict, log: dict) -> bytes:
         from reportlab.lib.utils import ImageReader
         qr_image = ImageReader(qr_buffer)
 
-        # QR 코드 그리기
-        qr_size = 25 * mm
-        qr_x = margin_x + content_width - qr_size - padding
-        qr_y = y - chain_card_height + padding
+        qr_size = 18 * mm
+        qr_x = width - margin_x - qr_size - 3*mm
+        qr_y = margin_y + 6*mm
         c.drawImage(qr_image, qr_x, qr_y, width=qr_size, height=qr_size)
 
-    y = y - chain_card_height - 5 * mm
+        c.setFont(font_name, 6)
+        c.setFillColor(HexColor(GRAY))
+        c.drawCentredString(qr_x + qr_size/2, qr_y - 2*mm, "QR 스캔 검증")
 
-    # === 6. 발급일 ===
-    y -= 3 * mm
-    c.setFillColor(HexColor(GRAY_TEXT))
-    c.setFont(font_name, 10)
-    today = datetime.now().strftime("%Y년 %m월 %d일")
-    c.drawCentredString(width / 2, y, f"발급일: {today}")
-
-    # === 7. 법적 고지 ===
-    y -= 15 * mm
-    c.setFillColor(HexColor(GRAY_TEXT))
-    c.setFont(font_name, 7)
-    c.drawCentredString(width / 2, y, "본 증명서는 블록체인에 기록된 근무 내역을 바탕으로 발급되었습니다.")
-    y -= 4 * mm
-    c.drawCentredString(width / 2, y, "QR 코드 또는 TX Hash로 Polygonscan에서 검증할 수 있습니다.")
-    y -= 4 * mm
-    c.drawCentredString(width / 2, y, "본 증명서는 참고용이며, 법적 효력을 보장하지 않습니다.")
+    # ==================== 하단 고지 ====================
+    c.setFillColor(HexColor(LIGHT_GRAY))
+    c.setFont(font_name, 6)
+    c.drawString(margin_x, margin_y + 6*mm, "※ 본 증명서는 블록체인에 기록된 업무 내역을 바탕으로 자동 발급되었습니다.")
+    c.drawString(margin_x, margin_y + 2*mm, "※ QR코드 또는 TX Hash로 Polygonscan에서 원본 기록 검증이 가능합니다.")
 
     c.save()
     buffer.seek(0)
@@ -450,15 +478,19 @@ async def verify_log(
     # tx_hash로 찾기
     if tx_hash:
         with db.get_connection() as conn:
-            cursor = conn.execute(
-                "SELECT cl.*, e.title as event_title, e.event_date FROM chain_logs cl LEFT JOIN events e ON cl.event_id = e.id WHERE cl.tx_hash = ?",
+            from psycopg2.extras import RealDictCursor
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute(
+                "SELECT cl.*, e.title as event_title, e.event_date FROM chain_logs cl LEFT JOIN events e ON cl.event_id = e.id WHERE cl.tx_hash = %s",
                 (tx_hash,)
             )
             row = cursor.fetchone()
     elif log_hash:
         with db.get_connection() as conn:
-            cursor = conn.execute(
-                "SELECT cl.*, e.title as event_title, e.event_date FROM chain_logs cl LEFT JOIN events e ON cl.event_id = e.id WHERE cl.log_hash = ?",
+            from psycopg2.extras import RealDictCursor
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute(
+                "SELECT cl.*, e.title as event_title, e.event_date FROM chain_logs cl LEFT JOIN events e ON cl.event_id = e.id WHERE cl.log_hash = %s",
                 (log_hash,)
             )
             row = cursor.fetchone()
@@ -537,10 +569,12 @@ async def chain_status(
 
         # 최근 기록 수
         with db.get_connection() as conn:
-            cursor = conn.execute("SELECT COUNT(*) as cnt FROM chain_logs")
+            from psycopg2.extras import RealDictCursor
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute("SELECT COUNT(*) as cnt FROM chain_logs")
             total_logs = cursor.fetchone()["cnt"]
 
-            cursor = conn.execute("SELECT COUNT(*) as cnt FROM chain_logs WHERE tx_hash IS NOT NULL")
+            cursor.execute("SELECT COUNT(*) as cnt FROM chain_logs WHERE tx_hash IS NOT NULL")
             confirmed_logs = cursor.fetchone()["cnt"]
 
         return {

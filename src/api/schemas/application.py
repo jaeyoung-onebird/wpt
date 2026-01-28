@@ -1,5 +1,6 @@
 """Application Schemas"""
-from pydantic import BaseModel
+from pydantic import BaseModel, field_serializer
+from datetime import datetime, timezone, timedelta
 from enum import Enum
 
 
@@ -27,8 +28,8 @@ class ApplicationResponse(BaseModel):
     event_id: int
     worker_id: int
     status: str
-    applied_at: str | None = None
-    confirmed_at: str | None = None
+    applied_at: datetime | str | None = None
+    confirmed_at: datetime | str | None = None
     confirmed_by: int | None = None
     rejection_reason: str | None = None
     # 관계 데이터
@@ -39,6 +40,18 @@ class ApplicationResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+    @field_serializer('applied_at', 'confirmed_at')
+    def serialize_datetime(self, dt: datetime | str | None) -> str | None:
+        if dt is None:
+            return None
+        if isinstance(dt, str):
+            return dt
+        # naive datetime이면 UTC로 간주 후 KST로 변환
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        kst = dt.astimezone(timezone(timedelta(hours=9)))
+        return kst.strftime('%Y-%m-%d %H:%M:%S')
 
 
 class ApplicationListResponse(BaseModel):

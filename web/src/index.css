@@ -95,16 +95,21 @@ body {
 
   /* 버튼 - 토스 스타일 */
   .btn {
-    @apply px-5 py-2.5 rounded-xl font-semibold transition-all active:scale-[0.98] text-sm;
+    @apply px-5 py-3 rounded-xl font-semibold transition-all active:scale-[0.98] text-sm;
   }
 
   .btn-primary {
-    @apply btn text-white;
-    background-color: #3182F6;
+    @apply btn text-white font-bold;
+    background-color: #2563EB;
   }
 
   .btn-primary:hover {
-    background-color: #1B64DA;
+    background-color: #1D4ED8;
+  }
+
+  .btn-primary:disabled {
+    background-color: #9CA3AF;
+    cursor: not-allowed;
   }
 
   .btn-secondary {
