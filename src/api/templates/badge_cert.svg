@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400">
+  <defs>
+    <linearGradient id="border-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:{{grade_color_start}}"/>
+      <stop offset="100%" style="stop-color:{{grade_color_end}}"/>
+    </linearGradient>
+    <pattern id="pattern" width="20" height="20" patternUnits="userSpaceOnUse">
+      <circle cx="10" cy="10" r="1" fill="rgba(0,0,0,0.03)"/>
+    </pattern>
+    <filter id="icon-shadow">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="{{grade_badge_color}}" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <!-- 외곽 테두리 -->
+  <rect width="600" height="400" rx="8" fill="url(#border-gradient)"/>
+
+  <!-- 내부 배경 -->
+  <rect x="8" y="8" width="584" height="384" rx="4" fill="#FEFEFE"/>
+
+  <!-- 패턴 오버레이 -->
+  <rect x="8" y="8" width="584" height="384" rx="4" fill="url(#pattern)"/>
+
+  <!-- 상단 장식 라인 -->
+  <line x1="50" y1="50" x2="550" y2="50" stroke="{{grade_badge_color}}" stroke-width="2"/>
+  <line x1="50" y1="54" x2="550" y2="54" stroke="{{grade_color_end}}" stroke-width="1" opacity="0.5"/>
+
+  <!-- 인증서 타이틀 -->
+  <text x="300" y="90" text-anchor="middle" font-family="Pretendard, -apple-system, sans-serif"
+        font-size="14" font-weight="500" fill="{{grade_badge_color}}" letter-spacing="4">CERTIFICATE OF ACHIEVEMENT</text>
+
+  <!-- 아이콘 원형 배경 -->
+  <circle cx="300" cy="145" r="45" fill="{{grade_badge_color}}" opacity="0.1"/>
+  <circle cx="300" cy="145" r="38" fill="{{grade_badge_color}}" opacity="0.15"/>
+  <circle cx="300" cy="145" r="32" fill="#FFFFFF" stroke="{{grade_badge_color}}" stroke-width="2" stroke-opacity="0.4"/>
+
+  <!-- 아이콘 (SVG) -->
+  <g transform="translate(300, 145) scale(0.9)" filter="url(#icon-shadow)">
+    {{icon_svg}}
+  </g>
+
+  <!-- 배지 타이틀 -->
+  <text x="300" y="215" text-anchor="middle" font-family="Pretendard, -apple-system, sans-serif"
+        font-size="28" font-weight="700" fill="#1a1a2e">{{title}}</text>
+
+  <!-- 설명 -->
+  <text x="300" y="250" text-anchor="middle" font-family="Pretendard, -apple-system, sans-serif"
+        font-size="14" fill="#666666">{{description}}</text>
+
+  <!-- 이벤트명 (프로젝트용) -->
+  <text x="300" y="280" text-anchor="middle" font-family="Pretendard, -apple-system, sans-serif"
+        font-size="12" fill="{{grade_badge_color}}">{{event_name}}</text>
+
+  <!-- 등급 뱃지 -->
+  <rect x="255" y="300" width="90" height="26" rx="13" fill="{{grade_badge_color}}"/>
+  <text x="300" y="318" text-anchor="middle" font-family="Pretendard, -apple-system, sans-serif"
+        font-size="11" font-weight="600" fill="#FFFFFF">{{grade_label}}</text>
+
+  <!-- 하단 장식 라인 -->
+  <line x1="50" y1="345" x2="550" y2="345" stroke="{{grade_color_end}}" stroke-width="1" opacity="0.3"/>
+
+  <!-- 발급 정보 -->
+  <text x="100" y="370" text-anchor="start" font-family="Pretendard, -apple-system, sans-serif"
+        font-size="10" fill="#999999">발급일: {{earned_date}}</text>
+  <text x="300" y="370" text-anchor="middle" font-family="Pretendard, -apple-system, sans-serif"
+        font-size="10" fill="#999999">{{worker_id}}</text>
+  <text x="500" y="370" text-anchor="end" font-family="Pretendard, -apple-system, sans-serif"
+        font-size="10" fill="#999999">WorkProof Chain</text>
+
+  <!-- 코너 장식 -->
+  <path d="M20,20 L50,20 L50,25 L25,25 L25,50 L20,50 Z" fill="{{grade_badge_color}}" opacity="0.3"/>
+  <path d="M580,20 L550,20 L550,25 L575,25 L575,50 L580,50 Z" fill="{{grade_badge_color}}" opacity="0.3"/>
+  <path d="M20,380 L50,380 L50,375 L25,375 L25,350 L20,350 Z" fill="{{grade_badge_color}}" opacity="0.3"/>
+  <path d="M580,380 L550,380 L550,375 L575,375 L575,350 L580,350 Z" fill="{{grade_badge_color}}" opacity="0.3"/>
+</svg>

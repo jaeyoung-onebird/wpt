@@ -466,6 +466,59 @@ class Database:
                 )
             """)
 
+            # 성과 배지 (Achievement Badges / NFT)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS worker_badges (
+                    id SERIAL PRIMARY KEY,
+                    worker_id INTEGER NOT NULL REFERENCES workers(id),
+                    badge_type TEXT NOT NULL,
+                    badge_level INTEGER DEFAULT 1,
+                    title TEXT NOT NULL,
+                    description TEXT,
+                    icon TEXT,
+                    earned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    tx_hash TEXT,
+                    is_nft BOOLEAN DEFAULT FALSE,
+                    metadata JSONB,
+                    event_id INTEGER REFERENCES events(id),
+                    batch_id INTEGER,
+                    template_type TEXT DEFAULT 'minimal',
+                    status TEXT DEFAULT 'ACTIVE',
+                    revoke_reason TEXT,
+                    image_url TEXT,
+                    UNIQUE(worker_id, badge_type, badge_level)
+                )
+            """)
+
+            # 프로젝트 NFT 발행 배치
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS project_nft_batches (
+                    id SERIAL PRIMARY KEY,
+                    event_id INTEGER NOT NULL REFERENCES events(id),
+                    title TEXT NOT NULL,
+                    description TEXT,
+                    template_type TEXT DEFAULT 'cert',
+                    issued_by INTEGER REFERENCES workers(id),
+                    issued_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    total_issued INTEGER DEFAULT 0,
+                    metadata JSONB
+                )
+            """)
+
+            # 감사 로그
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS audit_logs (
+                    id SERIAL PRIMARY KEY,
+                    action TEXT NOT NULL,
+                    entity_type TEXT NOT NULL,
+                    entity_id INTEGER,
+                    actor_id INTEGER,
+                    actor_type TEXT,
+                    details JSONB,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
             # 인덱스 생성
             indexes = [
                 "CREATE INDEX IF NOT EXISTS idx_applications_event ON applications(event_id)",
@@ -481,7 +534,14 @@ class Database:
                 "CREATE INDEX IF NOT EXISTS idx_worker_history_worker ON worker_history(worker_id)",
                 "CREATE INDEX IF NOT EXISTS idx_app_status_history_app ON application_status_history(application_id)",
                 "CREATE INDEX IF NOT EXISTS idx_worker_monthly_stats ON worker_monthly_stats(worker_id, year, month)",
-                "CREATE INDEX IF NOT EXISTS idx_ratings_attendance ON ratings(attendance_id)"
+                "CREATE INDEX IF NOT EXISTS idx_ratings_attendance ON ratings(attendance_id)",
+                "CREATE INDEX IF NOT EXISTS idx_worker_badges_worker ON worker_badges(worker_id)",
+                "CREATE INDEX IF NOT EXISTS idx_worker_badges_type ON worker_badges(badge_type)",
+                "CREATE INDEX IF NOT EXISTS idx_worker_badges_event ON worker_badges(event_id)",
+                "CREATE INDEX IF NOT EXISTS idx_worker_badges_status ON worker_badges(status)",
+                "CREATE INDEX IF NOT EXISTS idx_project_nft_batches_event ON project_nft_batches(event_id)",
+                "CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity_type, entity_id)",
+                "CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON audit_logs(actor_id)"
             ]
             for idx in indexes:
                 cursor.execute(idx)
@@ -1987,3 +2047,312 @@ class Database:
                 'rating_stats': rating_stats,
                 'by_category': by_category
             }
+
+    # ===== Worker Badges (성과 배지 / NFT) =====
+    def get_worker_badges(self, worker_id: int) -> List[Dict]:
+        """근무자의 모든 배지 조회"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute("""
+                SELECT * FROM worker_badges
+                WHERE worker_id = %s
+                ORDER BY earned_at DESC
+            """, (worker_id,))
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_badge_by_id(self, badge_id: int) -> Optional[Dict]:
+        """배지 ID로 배지 조회"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute("""
+                SELECT * FROM worker_badges WHERE id = %s
+            """, (badge_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def has_badge(self, worker_id: int, badge_type: str, badge_level: int = 1) -> bool:
+        """특정 배지 보유 여부 확인"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT 1 FROM worker_badges
+                WHERE worker_id = %s AND badge_type = %s AND badge_level = %s
+            """, (worker_id, badge_type, badge_level))
+            return cursor.fetchone() is not None
+
+    def award_badge(self, worker_id: int, badge_type: str, title: str,
+                    description: str = None, icon: str = None,
+                    badge_level: int = 1, tx_hash: str = None,
+                    is_nft: bool = False, metadata: dict = None) -> Optional[int]:
+        """배지 발급 (이미 있으면 None 반환)"""
+        if self.has_badge(worker_id, badge_type, badge_level):
+            return None
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            import json
+            cursor.execute("""
+                INSERT INTO worker_badges
+                (worker_id, badge_type, badge_level, title, description, icon, tx_hash, is_nft, metadata)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+            """, (worker_id, badge_type, badge_level, title, description, icon,
+                  tx_hash, is_nft, json.dumps(metadata) if metadata else None))
+            return cursor.fetchone()[0]
+
+    def get_worker_badge_summary(self, worker_id: int) -> Dict:
+        """근무자 배지 요약 (총 개수, 최근 배지 등)"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+            # 총 배지 수
+            cursor.execute("""
+                SELECT COUNT(*) as total_badges FROM worker_badges WHERE worker_id = %s
+            """, (worker_id,))
+            total = cursor.fetchone()["total_badges"]
+
+            # 최근 획득 배지 3개
+            cursor.execute("""
+                SELECT * FROM worker_badges
+                WHERE worker_id = %s
+                ORDER BY earned_at DESC
+                LIMIT 3
+            """, (worker_id,))
+            recent = [dict(row) for row in cursor.fetchall()]
+
+            return {
+                "total_badges": total,
+                "recent_badges": recent
+            }
+
+    def get_worker_stats_for_badges(self, worker_id: int) -> Dict:
+        """배지 발급 조건 확인용 근무자 통계"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+            # 총 근무 횟수 (완료된 출퇴근)
+            cursor.execute("""
+                SELECT COUNT(*) as total_work_count
+                FROM attendance
+                WHERE worker_id = %s AND check_out_time IS NOT NULL
+            """, (worker_id,))
+            total_work = cursor.fetchone()["total_work_count"]
+
+            # 노쇼 없이 완료한 횟수
+            cursor.execute("""
+                SELECT COUNT(*) as perfect_attendance
+                FROM applications ap
+                JOIN attendance at ON ap.worker_id = at.worker_id AND ap.event_id = at.event_id
+                WHERE ap.worker_id = %s AND ap.status = 'CONFIRMED' AND at.check_out_time IS NOT NULL
+            """, (worker_id,))
+            perfect = cursor.fetchone()["perfect_attendance"]
+
+            # 블록체인 기록 수
+            cursor.execute("""
+                SELECT COUNT(*) as blockchain_records
+                FROM chain_logs cl
+                JOIN attendance a ON cl.attendance_id = a.id
+                WHERE a.worker_id = %s
+            """, (worker_id,))
+            blockchain = cursor.fetchone()["blockchain_records"]
+
+            # 평균 평점
+            cursor.execute("""
+                SELECT AVG(r.rating) as avg_rating, COUNT(r.id) as rating_count
+                FROM ratings r
+                JOIN attendance a ON r.attendance_id = a.id
+                WHERE a.worker_id = %s
+            """, (worker_id,))
+            rating_row = cursor.fetchone()
+            avg_rating = float(rating_row["avg_rating"]) if rating_row["avg_rating"] else 0
+            rating_count = rating_row["rating_count"] or 0
+
+            return {
+                "total_work_count": total_work,
+                "perfect_attendance": perfect,
+                "blockchain_records": blockchain,
+                "avg_rating": avg_rating,
+                "rating_count": rating_count
+            }
+
+    # ===== Project NFT Batches =====
+    def create_nft_batch(self, event_id: int, title: str, description: str = None,
+                         template_type: str = 'cert', issued_by: int = None,
+                         metadata: dict = None) -> int:
+        """프로젝트 NFT 배치 생성"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            import json
+            cursor.execute("""
+                INSERT INTO project_nft_batches
+                (event_id, title, description, template_type, issued_by, metadata)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id
+            """, (event_id, title, description, template_type, issued_by,
+                  json.dumps(metadata) if metadata else None))
+            return cursor.fetchone()[0]
+
+    def update_batch_count(self, batch_id: int, count: int):
+        """배치 발급 수량 업데이트"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE project_nft_batches SET total_issued = %s WHERE id = %s
+            """, (count, batch_id))
+
+    def get_event_batches(self, event_id: int) -> List[Dict]:
+        """이벤트의 NFT 배치 목록"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute("""
+                SELECT * FROM project_nft_batches WHERE event_id = %s ORDER BY issued_at DESC
+            """, (event_id,))
+            return [dict(row) for row in cursor.fetchall()]
+
+    def award_project_badge(self, worker_id: int, event_id: int, batch_id: int,
+                            title: str, description: str = None, icon: str = None,
+                            template_type: str = 'cert', image_url: str = None,
+                            metadata: dict = None) -> Optional[int]:
+        """프로젝트 배지 발급 (이벤트당 1개)"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            import json
+            # 이미 해당 이벤트에서 배지를 받았는지 확인
+            cursor.execute("""
+                SELECT id FROM worker_badges
+                WHERE worker_id = %s AND event_id = %s AND badge_type = 'PROJECT'
+            """, (worker_id, event_id))
+            if cursor.fetchone():
+                return None
+
+            cursor.execute("""
+                INSERT INTO worker_badges
+                (worker_id, badge_type, badge_level, title, description, icon,
+                 event_id, batch_id, template_type, image_url, is_nft, metadata)
+                VALUES (%s, 'PROJECT', 1, %s, %s, %s, %s, %s, %s, %s, TRUE, %s)
+                RETURNING id
+            """, (worker_id, title, description, icon, event_id, batch_id,
+                  template_type, image_url, json.dumps(metadata) if metadata else None))
+            return cursor.fetchone()[0]
+
+    def get_completed_events(self, limit: int = 50) -> List[Dict]:
+        """종료된 이벤트 목록 (배지 발급용)"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute("""
+                SELECT e.*,
+                       (SELECT COUNT(*) FROM attendance a WHERE a.event_id = e.id AND a.check_out_time IS NOT NULL) as completed_workers,
+                       (SELECT COUNT(*) FROM project_nft_batches b WHERE b.event_id = e.id) as batch_count
+                FROM events e
+                WHERE e.status = 'COMPLETED'
+                ORDER BY e.updated_at DESC
+                LIMIT %s
+            """, (limit,))
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_event_eligible_workers(self, event_id: int) -> List[Dict]:
+        """이벤트의 배지 발급 대상 근무자 (출퇴근 완료자)"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute("""
+                SELECT w.*, a.check_in_time, a.check_out_time, a.id as attendance_id,
+                       (SELECT COUNT(*) FROM worker_badges wb WHERE wb.worker_id = w.id AND wb.event_id = %s) as has_project_badge
+                FROM workers w
+                JOIN attendance a ON w.id = a.worker_id
+                WHERE a.event_id = %s AND a.check_out_time IS NOT NULL
+                ORDER BY a.check_out_time DESC
+            """, (event_id, event_id))
+            return [dict(row) for row in cursor.fetchall()]
+
+    # ===== Audit Logs =====
+    def create_audit_log(self, action: str, entity_type: str, entity_id: int = None,
+                         actor_id: int = None, actor_type: str = None, details: dict = None):
+        """감사 로그 생성"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            import json
+            cursor.execute("""
+                INSERT INTO audit_logs (action, entity_type, entity_id, actor_id, actor_type, details)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (action, entity_type, entity_id, actor_id, actor_type,
+                  json.dumps(details) if details else None))
+
+    def revoke_badge(self, badge_id: int, reason: str, actor_id: int) -> bool:
+        """배지 취소 (삭제가 아닌 상태 변경)"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE worker_badges SET status = 'REVOKED', revoke_reason = %s
+                WHERE id = %s AND status = 'ACTIVE'
+            """, (reason, badge_id))
+            if cursor.rowcount > 0:
+                self.create_audit_log(
+                    action='BADGE_REVOKED',
+                    entity_type='worker_badges',
+                    entity_id=badge_id,
+                    actor_id=actor_id,
+                    actor_type='ADMIN',
+                    details={'reason': reason}
+                )
+                return True
+            return False
+
+    def get_workers_with_badges_summary(self, limit: int = 100) -> List[Dict]:
+        """관리자용: 근무자별 배지 요약 포함 목록"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute("""
+                SELECT w.*,
+                       COALESCE(badge_info.badge_count, 0) as badge_count,
+                       badge_info.top_badges
+                FROM workers w
+                LEFT JOIN LATERAL (
+                    SELECT
+                        COUNT(*) as badge_count,
+                        json_agg(json_build_object('icon', icon, 'title', title) ORDER BY earned_at DESC) FILTER (WHERE icon IS NOT NULL) as top_badges
+                    FROM (
+                        SELECT icon, title, earned_at
+                        FROM worker_badges
+                        WHERE worker_id = w.id AND status = 'ACTIVE'
+                        ORDER BY earned_at DESC
+                        LIMIT 3
+                    ) sub
+                ) badge_info ON true
+                ORDER BY badge_info.badge_count DESC NULLS LAST, w.created_at DESC
+                LIMIT %s
+            """, (limit,))
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_next_badge_progress(self, worker_id: int) -> Optional[Dict]:
+        """다음 배지까지의 진행률"""
+        stats = self.get_worker_stats_for_badges(worker_id)
+        badges = self.get_worker_badges(worker_id)
+        earned_types = {(b['badge_type'], b['badge_level']) for b in badges}
+
+        # 근무 횟수 배지 진행률
+        work_thresholds = [(1, 1), (2, 10), (3, 50), (4, 100)]
+        for level, threshold in work_thresholds:
+            if ('WORK_COUNT', level) not in earned_types:
+                return {
+                    'badge_type': 'WORK_COUNT',
+                    'badge_level': level,
+                    'title': f'{threshold}회 근무 달성',
+                    'current': stats['total_work_count'],
+                    'target': threshold,
+                    'progress': min(100, int(stats['total_work_count'] / threshold * 100))
+                }
+
+        # 신뢰도 배지 진행률
+        trust_thresholds = [(1, 10), (2, 30), (3, 50)]
+        for level, threshold in trust_thresholds:
+            if ('TRUST', level) not in earned_types:
+                return {
+                    'badge_type': 'TRUST',
+                    'badge_level': level,
+                    'title': f'노쇼 없이 {threshold}회 근무',
+                    'current': stats['perfect_attendance'],
+                    'target': threshold,
+                    'progress': min(100, int(stats['perfect_attendance'] / threshold * 100))
+                }
+
+        return None  # 모든 배지 획득 완료

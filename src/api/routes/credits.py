@@ -568,3 +568,164 @@ async def get_checkin_history(
             created_at=str(h["created_at"]) if h.get("created_at") else None
         ) for h in history]
     }
+
+
+# ==================== 관리자 대시보드 API ====================
+
+class AdminCreditHistoryItem(BaseModel):
+    """관리자용 크레딧 거래 내역"""
+    id: int
+    worker_id: int
+    worker_name: Optional[str] = None
+    amount: int
+    balance_after: Optional[int] = None
+    tx_type: str
+    reason: str
+    tx_hash: Optional[str] = None
+    created_at: Optional[str] = None
+
+
+class TokenStatsResponse(BaseModel):
+    """토큰 통계 응답"""
+    total_supply: int
+    circulating_supply: int
+    holder_count: int
+    today_minted: int
+    today_burned: int
+    total_transactions: int
+
+
+@router.get("/admin/history")
+async def get_all_credit_history(
+    limit: int = 100,
+    offset: int = 0,
+    tx_type: Optional[str] = None,
+    admin: dict = Depends(require_admin),
+    db: Database = Depends(get_db)
+):
+    """전체 크레딧 거래 내역 조회 (관리자 전용)"""
+    from psycopg2.extras import RealDictCursor
+
+    with db.get_connection() as conn:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        # 조건 쿼리 구성
+        where_clause = ""
+        params = []
+        if tx_type:
+            where_clause = "WHERE ch.tx_type = %s"
+            params.append(tx_type)
+
+        # 전체 거래 내역 조회 (근무자 이름 포함)
+        cursor.execute(f"""
+            SELECT ch.*, w.name as worker_name
+            FROM credit_history ch
+            LEFT JOIN workers w ON ch.worker_id = w.id
+            {where_clause}
+            ORDER BY ch.created_at DESC
+            LIMIT %s OFFSET %s
+        """, params + [limit, offset])
+        history = cursor.fetchall()
+
+        # 전체 개수
+        cursor.execute(f"""
+            SELECT COUNT(*) as cnt FROM credit_history ch {where_clause}
+        """, params)
+        total = cursor.fetchone()["cnt"]
+
+    return {
+        "total": total,
+        "history": [AdminCreditHistoryItem(
+            id=h["id"],
+            worker_id=h["worker_id"],
+            worker_name=h.get("worker_name"),
+            amount=h["amount"],
+            balance_after=h.get("balance_after"),
+            tx_type=h["tx_type"],
+            reason=h["reason"],
+            tx_hash=h.get("tx_hash"),
+            created_at=str(h["created_at"]) if h.get("created_at") else None
+        ) for h in history]
+    }
+
+
+@router.get("/admin/stats", response_model=TokenStatsResponse)
+async def get_token_stats(
+    admin: dict = Depends(require_admin),
+    db: Database = Depends(get_db)
+):
+    """토큰 통계 조회 (관리자 전용)"""
+    from psycopg2.extras import RealDictCursor
+
+    with db.get_connection() as conn:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        # 총 발행량 (블록체인 or DB)
+        if wpt_service.enabled:
+            total_supply = wpt_service.get_total_supply()
+        else:
+            cursor.execute("SELECT COALESCE(SUM(tokens), 0) as total FROM workers")
+            total_supply = cursor.fetchone()["total"]
+
+        # 유통량 (홀더들의 총 잔액)
+        cursor.execute("SELECT COALESCE(SUM(tokens), 0) as total FROM workers WHERE tokens > 0")
+        circulating_supply = cursor.fetchone()["total"]
+
+        # 홀더 수 (잔액 > 0인 근무자)
+        cursor.execute("SELECT COUNT(*) as cnt FROM workers WHERE tokens > 0")
+        holder_count = cursor.fetchone()["cnt"]
+
+        # 오늘 발행량
+        cursor.execute("""
+            SELECT COALESCE(SUM(amount), 0) as total
+            FROM credit_history
+            WHERE amount > 0 AND DATE(created_at) = CURRENT_DATE
+        """)
+        today_minted = cursor.fetchone()["total"]
+
+        # 오늘 소각량 (사용량)
+        cursor.execute("""
+            SELECT COALESCE(ABS(SUM(amount)), 0) as total
+            FROM credit_history
+            WHERE amount < 0 AND DATE(created_at) = CURRENT_DATE
+        """)
+        today_burned = cursor.fetchone()["total"]
+
+        # 총 거래 수
+        cursor.execute("SELECT COUNT(*) as cnt FROM credit_history")
+        total_transactions = cursor.fetchone()["cnt"]
+
+    return TokenStatsResponse(
+        total_supply=total_supply,
+        circulating_supply=circulating_supply,
+        holder_count=holder_count,
+        today_minted=today_minted,
+        today_burned=today_burned,
+        total_transactions=total_transactions
+    )
+
+
+@router.get("/admin/workers-with-badges")
+async def get_workers_with_badges(
+    limit: int = 100,
+    admin: dict = Depends(require_admin),
+    db: Database = Depends(get_db)
+):
+    """
+    관리자용: 근무자 목록 + 배지 정보 포함
+    크레딧 페이지에서 NFT 보유 현황 표시용
+    """
+    workers = db.get_workers_with_badges_summary(limit)
+
+    return {
+        "workers": [{
+            "id": w["id"],
+            "name": w.get("name"),
+            "phone": w.get("phone"),
+            "face_photo_file_id": w.get("face_photo_file_id"),
+            "created_at": str(w.get("created_at")) if w.get("created_at") else None,
+            "badge_count": w.get("badge_count", 0),
+            "top_badges": w.get("top_badges") or []
+        } for w in workers],
+        "total": len(workers)
+    }

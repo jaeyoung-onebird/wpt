@@ -12,3 +12,13 @@ __pycache__/
 .venv/
 venv/
 node_modules/
+
+# Next.js build output
+.next/
+out/
+
+# Exports
+exports/
+
+# Data
+data/photos/

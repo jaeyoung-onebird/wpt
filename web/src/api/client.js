@@ -163,6 +163,43 @@ export const creditsAPI = {
   // Admin only
   mint: (workerId, amount, reason) => api.post('/api/credits/mint', { worker_id: workerId, amount, reason }),
   getWorkerBalance: (workerId) => api.get(`/api/credits/${workerId}`),
+  // Admin dashboard
+  getAdminStats: () => api.get('/api/credits/admin/stats'),
+  getAdminHistory: (limit = 100, offset = 0, txType = null) =>
+    api.get('/api/credits/admin/history', { params: { limit, offset, tx_type: txType } }),
+  getWorkersWithBadges: (limit = 100) => api.get('/api/credits/admin/workers-with-badges', { params: { limit } }),
+};
+
+// Badges API (성과 배지 / NFT)
+export const badgesAPI = {
+  getMyBadges: () => api.get('/api/badges/me'),
+  getDefinitions: () => api.get('/api/badges/definitions'),
+  // Admin only
+  getWorkerBadges: (workerId) => api.get(`/api/badges/${workerId}`),
+  checkWorkerBadges: (workerId) => api.post(`/api/badges/${workerId}/check`),
+};
+
+// NFT Image API
+export const nftAPI = {
+  // Worker endpoints
+  getMyBadges: () => api.get('/api/nft/worker/me/badges'),
+  getMyBadgeDetail: (awardId) => api.get(`/api/nft/worker/me/badges/${awardId}`),
+  // 배지 이미지 URL 생성 (SVG)
+  getBadgeImageUrl: (badgeId) => `${API_BASE_URL}/api/nft/render/${badgeId}`,
+  // 배지 미리보기 URL (인증 불필요)
+  getPreviewUrl: (badgeType, badgeLevel, template = 'minimal') =>
+    `${API_BASE_URL}/api/nft/preview/${badgeType}/${badgeLevel}?template=${template}`,
+  // 커스텀 렌더링 (POST)
+  renderCustom: (data) => api.post('/api/nft/render', data, { responseType: 'blob' }),
+  // 배지 메타데이터 조회
+  getMetadata: (badgeId) => api.get(`/api/nft/metadata/${badgeId}`),
+  // 등급 정보 조회
+  getGrades: () => api.get('/api/nft/grades'),
+  // Admin only
+  getAdminBadgeImageUrl: (badgeId) => `${API_BASE_URL}/api/nft/render/admin/${badgeId}`,
+  getCompletedEvents: () => api.get('/api/nft/admin/events/completed'),
+  getEligibleWorkers: (eventId) => api.get(`/api/nft/admin/events/${eventId}/eligible-workers`),
+  issueProjectBadges: (eventId, data) => api.post(`/api/nft/admin/events/${eventId}/nft-issue`, data),
 };
 
 // BigData API

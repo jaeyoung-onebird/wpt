@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="500" viewBox="0 0 400 500">
+  <defs>
+    <!-- 배경 그라데이션 -->
+    <linearGradient id="bg-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:{{grade_color_start}}"/>
+      <stop offset="100%" style="stop-color:{{grade_color_end}}"/>
+    </linearGradient>
+
+    <!-- 글로우 효과 -->
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- 카드 그림자 -->
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000000" flood-opacity="0.3"/>
+    </filter>
+
+    <!-- 아이콘 배경 원형 그라데이션 -->
+    <radialGradient id="icon-bg" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#FFFFFF;stop-opacity:0.2"/>
+      <stop offset="100%" style="stop-color:#FFFFFF;stop-opacity:0.05"/>
+    </radialGradient>
+  </defs>
+
+  <!-- 카드 배경 -->
+  <rect width="400" height="500" rx="24" fill="url(#bg-gradient)" filter="url(#shadow)"/>
+
+  <!-- 상단 장식 패턴 -->
+  <circle cx="50" cy="50" r="80" fill="rgba(255,255,255,0.03)"/>
+  <circle cx="350" cy="100" r="60" fill="rgba(255,255,255,0.02)"/>
+
+  <!-- 아이콘 배경 원 -->
+  <circle cx="200" cy="130" r="70" fill="url(#icon-bg)"/>
+
+  <!-- 메인 아이콘 -->
+  <text x="200" y="150" text-anchor="middle" font-size="72" filter="url(#glow)">{{icon}}</text>
+
+  <!-- 타이틀 -->
+  <text x="200" y="240" text-anchor="middle" font-family="Pretendard, Apple SD Gothic Neo, sans-serif"
+        font-size="26" font-weight="700" fill="#FFFFFF" letter-spacing="0.5">{{title}}</text>
+
+  <!-- 설명 -->
+  <text x="200" y="275" text-anchor="middle" font-family="Pretendard, Apple SD Gothic Neo, sans-serif"
+        font-size="14" fill="rgba(255,255,255,0.7)">{{description}}</text>
+
+  <!-- 등급 뱃지 -->
+  <rect x="140" y="310" width="120" height="32" rx="16" fill="{{grade_badge_color}}"/>
+  <text x="200" y="332" text-anchor="middle" font-family="Pretendard, Apple SD Gothic Neo, sans-serif"
+        font-size="13" font-weight="600" fill="#FFFFFF">{{grade_label}}</text>
+
+  <!-- 구분선 -->
+  <line x1="60" y1="370" x2="340" y2="370" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
+
+  <!-- 획득 정보 -->
+  <text x="200" y="405" text-anchor="middle" font-family="Pretendard, Apple SD Gothic Neo, sans-serif"
+        font-size="12" fill="rgba(255,255,255,0.5)">획득일</text>
+  <text x="200" y="425" text-anchor="middle" font-family="Pretendard, Apple SD Gothic Neo, sans-serif"
+        font-size="15" font-weight="500" fill="rgba(255,255,255,0.9)">{{earned_date}}</text>
+
+  <!-- 근무자 ID -->
+  <text x="200" y="455" text-anchor="middle" font-family="Pretendard, Apple SD Gothic Neo, sans-serif"
+        font-size="11" fill="rgba(255,255,255,0.4)">{{worker_id}}</text>
+
+  <!-- 하단 로고 -->
+  <text x="200" y="485" text-anchor="middle" font-family="Pretendard, Apple SD Gothic Neo, sans-serif"
+        font-size="10" font-weight="500" fill="rgba(255,255,255,0.3)" letter-spacing="2">WORKPROOF CHAIN</text>
+</svg>

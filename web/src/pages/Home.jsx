@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { eventsAPI, applicationsAPI, attendanceAPI, workersAPI } from '../api/client';
+import { eventsAPI, applicationsAPI, attendanceAPI, workersAPI, badgesAPI } from '../api/client';
 
 export default function Home() {
   const { user, worker } = useAuth();
@@ -9,6 +9,7 @@ export default function Home() {
   const [events, setEvents] = useState([]);
   const [myApplications, setMyApplications] = useState([]);
   const [myAttendance, setMyAttendance] = useState([]);
+  const [myBadges, setMyBadges] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -26,11 +27,14 @@ export default function Home() {
       setEvents(data.events || []);
 
       if (worker) {
-        const { data: appData } = await applicationsAPI.getMyList();
-        setMyApplications(appData.applications || []);
-
-        const { data: attData } = await attendanceAPI.getMyList();
-        setMyAttendance(attData.attendance || []);
+        const [appRes, attRes, badgeRes] = await Promise.all([
+          applicationsAPI.getMyList(),
+          attendanceAPI.getMyList(),
+          badgesAPI.getMyBadges().catch(() => ({ data: { badges: [] } }))
+        ]);
+        setMyApplications(appRes.data.applications || []);
+        setMyAttendance(attRes.data.attendance || []);
+        setMyBadges(badgeRes.data.badges || []);
       }
     } catch (error) {
       console.error('Failed to load data:', error);
@@ -156,11 +160,53 @@ export default function Home() {
                   '👤'
                 )}
               </div>
-              <div>
+              <div className="flex-1">
                 <p className="text-xs" style={{ color: 'var(--color-text-sub)' }}>안녕하세요</p>
                 <h2 className="font-bold text-lg" style={{ color: 'var(--color-text-title)' }}>{worker.name}님</h2>
               </div>
+              {/* 배지 카운트 */}
+              {myBadges.length > 0 && (
+                <div className="flex items-center gap-1 px-2 py-1 rounded-full" style={{ backgroundColor: 'var(--color-secondary-light)' }}>
+                  <span className="text-sm">🏅</span>
+                  <span className="text-xs font-semibold" style={{ color: 'var(--color-secondary)' }}>{myBadges.length}</span>
+                </div>
+              )}
             </div>
+
+            {/* 배지 표시 */}
+            {myBadges.length > 0 && (
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-medium" style={{ color: 'var(--color-text-sub)' }}>내 배지</span>
+                  <Link to="/badges" className="text-xs" style={{ color: 'var(--color-primary)' }}>전체보기</Link>
+                </div>
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {myBadges.slice(0, 5).map((badge) => (
+                    <div
+                      key={badge.id}
+                      className="flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border"
+                      style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)' }}
+                      title={badge.description}
+                    >
+                      <span className="text-sm">{badge.icon}</span>
+                      <span className="text-xs font-medium whitespace-nowrap" style={{ color: 'var(--color-text-secondary)' }}>
+                        {badge.title}
+                      </span>
+                    </div>
+                  ))}
+                  {myBadges.length > 5 && (
+                    <Link
+                      to="/badges"
+                      className="flex-shrink-0 flex items-center justify-center px-3 py-1.5 rounded-full"
+                      style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text-sub)' }}
+                    >
+                      <span className="text-xs">+{myBadges.length - 5}개</span>
+                    </Link>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center justify-between py-3 px-4 rounded-xl" style={{ backgroundColor: 'var(--color-bg)' }}>
               <span className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>이번달 예상 수입</span>
               <span className="text-xl font-bold" style={{ color: 'var(--color-primary)' }}>{formatPay(monthlyEarnings)}</span>

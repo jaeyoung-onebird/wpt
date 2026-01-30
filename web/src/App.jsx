@@ -14,6 +14,15 @@ import WorkHistory from './pages/WorkHistory';
 import Profile from './pages/Profile';
 import Register from './pages/Register';
 import Blockchain from './pages/Blockchain';
+import Badges from './pages/Badges';
+import BadgeDetail from './pages/BadgeDetail';
+
+// 새 통합 페이지
+import Wallet from './pages/Wallet';
+import Notifications from './pages/Notifications';
+import Work from './pages/Work';
+import Collection from './pages/Collection';
+import My from './pages/My';
 
 // 관리자 페이지
 import AdminDashboard from './pages/admin/Dashboard';
@@ -26,6 +35,8 @@ import AdminSettings from './pages/admin/Settings';
 import AdminCredits from './pages/admin/Credits';
 import AdminAnalytics from './pages/admin/Analytics';
 import AdminBigData from './pages/admin/BigData';
+import AdminCompletedEvents from './pages/admin/CompletedEvents';
+import AdminNftIssue from './pages/admin/NftIssue';
 
 // 인증 필요 라우트
 function PrivateRoute({ children }) {
@@ -122,6 +133,64 @@ function AppRoutes() {
           }
         />
         <Route path="/blockchain" element={<Blockchain />} />
+        <Route
+          path="/badges"
+          element={
+            <PrivateRoute>
+              <Badges />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/badges/:id"
+          element={
+            <PrivateRoute>
+              <BadgeDetail />
+            </PrivateRoute>
+          }
+        />
+
+        {/* 새 통합 페이지 */}
+        <Route
+          path="/wallet"
+          element={
+            <PrivateRoute>
+              <Wallet />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/notifications"
+          element={
+            <PrivateRoute>
+              <Notifications />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/work"
+          element={
+            <PrivateRoute>
+              <Work />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/collection"
+          element={
+            <PrivateRoute>
+              <Collection />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/my"
+          element={
+            <PrivateRoute>
+              <My />
+            </PrivateRoute>
+          }
+        />
 
         {/* 관리자 전용 */}
         <Route
@@ -197,6 +266,14 @@ function AppRoutes() {
           }
         />
         <Route
+          path="/admin/wpt"
+          element={
+            <AdminRoute>
+              <AdminCredits />
+            </AdminRoute>
+          }
+        />
+        <Route
           path="/admin/analytics"
           element={
             <AdminRoute>
@@ -209,6 +286,22 @@ function AppRoutes() {
           element={
             <AdminRoute>
               <AdminBigData />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/admin/events/completed"
+          element={
+            <AdminRoute>
+              <AdminCompletedEvents />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/admin/events/:id/nft-issue"
+          element={
+            <AdminRoute>
+              <AdminNftIssue />
             </AdminRoute>
           }
         />

@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
-from .routes import auth, workers, events, applications, attendance, chain, admin, notifications, credits, email, bigdata
+from .routes import auth, workers, events, applications, attendance, chain, admin, notifications, credits, email, bigdata, badges, nft
 
 settings = get_settings()
 
@@ -45,6 +45,8 @@ app.include_router(notifications.router, prefix="/api/notifications", tags=["Not
 app.include_router(credits.router, prefix="/api/credits", tags=["Credits"])
 app.include_router(email.router, prefix="/api/email", tags=["Email Verification"])
 app.include_router(bigdata.router, prefix="/api", tags=["BigData Analytics"])
+app.include_router(badges.router, prefix="/api/badges", tags=["Badges"])
+app.include_router(nft.router, prefix="/api/nft", tags=["NFT"])
 
 
 @app.get("/", tags=["Root"])

@@ -604,10 +604,10 @@ async def get_analytics(
 
         # === 7. 월별 통계 ===
         cursor.execute("""
-            SELECT to_char(event_date, 'YYYY-MM') as month, COUNT(*) as events,
+            SELECT to_char(event_date::date, 'YYYY-MM') as month, COUNT(*) as events,
                    SUM(COALESCE(headcount, 0)) as total_workers
             FROM events
-            GROUP BY to_char(event_date, 'YYYY-MM')
+            GROUP BY to_char(event_date::date, 'YYYY-MM')
             ORDER BY month DESC
             LIMIT 12
         """)
@@ -799,14 +799,14 @@ async def get_revenue_analytics(
         # 월별 매출
         cursor.execute(f"""
             SELECT
-                to_char(e.event_date, 'YYYY-MM') as month,
+                to_char(e.event_date::date, 'YYYY-MM') as month,
                 COUNT(DISTINCT e.id) as events,
                 COUNT(DISTINCT att.id) as total_workers,
                 SUM(CASE WHEN att.check_out_time IS NOT NULL THEN e.pay_amount ELSE 0 END) as completed_pay,
                 SUM(e.pay_amount * COALESCE(e.headcount, 1)) as estimated_revenue
             FROM events e
             LEFT JOIN attendance att ON e.id = att.event_id
-            GROUP BY to_char(e.event_date, 'YYYY-MM')
+            GROUP BY to_char(e.event_date::date, 'YYYY-MM')
             ORDER BY month DESC
             LIMIT 12
         """)
