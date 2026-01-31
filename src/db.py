@@ -570,6 +570,29 @@ class Database:
             row = cursor.fetchone()
             return dict(row) if row else None
 
+    def get_worker_by_phone(self, phone: str) -> Optional[Dict]:
+        """전화번호로 근무자 조회"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            # 전화번호 형식 정규화 (하이픈 제거)
+            normalized_phone = phone.replace("-", "").replace(" ", "")
+            cursor.execute("SELECT * FROM workers WHERE REPLACE(phone, '-', '') = %s", (normalized_phone,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def get_worker_by_user_id(self, user_id: str) -> Optional[Dict]:
+        """사용자 ID로 연결된 근무자 조회"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            # users 테이블의 phone과 workers 테이블의 phone 매칭
+            cursor.execute("""
+                SELECT w.* FROM workers w
+                JOIN users u ON REPLACE(w.phone, '-', '') = REPLACE(u.phone, '-', '')
+                WHERE u.id = %s
+            """, (user_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
     def get_worker_by_id(self, worker_id: int) -> Optional[Dict]:
         """ID로 근무자 조회"""
         with self.get_connection() as conn:

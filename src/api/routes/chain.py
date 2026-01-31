@@ -16,9 +16,10 @@ router = APIRouter()
 async def get_all_chain_logs(
     limit: int = 100,
     offset: int = 0,
+    auth: dict = Depends(require_admin),
     db: Database = Depends(get_db)
 ):
-    """모든 블록체인 기록 조회 (공개)"""
+    """모든 블록체인 기록 조회 (관리자 전용)"""
     logs = db.get_all_chain_logs(limit=limit, offset=offset)
     total = db.count_chain_logs()
 

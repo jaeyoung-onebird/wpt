@@ -435,8 +435,104 @@ export default function Blockchain() {
         </div>
       </div>
 
-      {/* 관리자: 모든 근무자 기록 */}
-      {isAdmin && (
+      {/* 내 기록 헤더 */}
+      {worker && (
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-gray-900">내 블록체인 기록</h2>
+          <span className="text-sm text-gray-500">{myLogs.length}건</span>
+        </div>
+      )}
+
+      {/* 내 기록 목록 */}
+      {worker && (
+        <div>
+          {myLogs.length > 0 ? (
+            <div className="space-y-2">
+              {myLogs.map((log) => (
+                <div key={log.id} className="card">
+                  {/* 상단: 행사명 + 상태 */}
+                  <div className="flex justify-between items-start gap-2 mb-2">
+                    <div>
+                      <h3 className="font-semibold text-base">{log.event_title || '행사'}</h3>
+                      <p className="text-xs text-gray-500">
+                        {formatDate(log.event_date)}
+                      </p>
+                    </div>
+                    {getStatusChip(log)}
+                  </div>
+
+                  {/* 근무 시간 */}
+                  {log.check_in_time && (
+                    <div className="flex items-center gap-3 text-xs text-gray-500 mb-2">
+                      <span>출근 {formatTime(log.check_in_time)}</span>
+                      {log.check_out_time && (
+                        <span>퇴근 {formatTime(log.check_out_time)}</span>
+                      )}
+                      {log.worked_minutes && (
+                        <span className="font-medium text-gray-700">
+                          {formatWorkedTime(log.worked_minutes)}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* TX Hash */}
+                  {log.tx_hash ? (
+                    <div className="flex items-center justify-between text-xs bg-gray-50 rounded-lg px-3 py-2 mb-2">
+                      <span className="text-gray-500">TX</span>
+                      <button
+                        onClick={() => openPolygonscan(log.tx_hash)}
+                        className="font-mono text-blue-600"
+                      >
+                        {shortenHash(log.tx_hash)} &rarr;
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-gray-400 bg-gray-50 rounded-lg px-3 py-2 mb-2">
+                      블록체인 기록 대기중
+                    </div>
+                  )}
+
+                  {/* 버튼들 */}
+                  <div className="flex gap-2">
+                    {log.tx_hash && (
+                      <button
+                        onClick={() => handleVerify(log)}
+                        disabled={verifying === log.id}
+                        className="flex-1 btn-outline text-xs py-2"
+                      >
+                        {verifying === log.id ? '검증 중...' : '검증'}
+                      </button>
+                    )}
+
+                    {/* 증명서 다운로드 */}
+                    {log.tx_hash && (
+                      <button
+                        onClick={() => handleDownloadCertificate(log)}
+                        disabled={downloading === log.id || tokens < 1}
+                        className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs py-3 rounded-xl disabled:bg-gray-300 transition-colors"
+                      >
+                        {downloading === log.id ? '다운로드...' : '블록체인 업무증명서 (1크레딧)'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <div className="empty-state-icon">
+                <span className="text-2xl text-gray-400">⛓️</span>
+              </div>
+              <p className="empty-state-title">내 블록체인 기록이 없습니다</p>
+              <p className="empty-state-desc">출퇴근 시 자동으로 기록됩니다</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 관리자: 모든 근무자 기록 (숨김) */}
+      {false && isAdmin && (
         <>
           <div className="flex items-center justify-between">
             <h2 className="font-semibold text-gray-900">모든 근무자 블록체인 기록</h2>
@@ -516,16 +612,8 @@ export default function Blockchain() {
         </>
       )}
 
-      {/* 내 기록 헤더 */}
-      {worker && !isAdmin && (
-        <div className="flex items-center justify-between">
-          <h2 className="font-semibold text-gray-900">내 블록체인 기록</h2>
-          <span className="text-sm text-gray-500">{myLogs.length}건</span>
-        </div>
-      )}
-
-      {/* 기록 목록 (일반 사용자만) */}
-      {!isAdmin && <div>
+      {/* 기록 목록 (이미 위에서 표시됨 - 숨김) */}
+      {false && <div>
         {currentLogs.length > 0 ? (
           <div className="space-y-2">
             {currentLogs.map((log) => (

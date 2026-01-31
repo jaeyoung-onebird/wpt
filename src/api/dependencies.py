@@ -71,11 +71,25 @@ async def require_worker(
     db: Database = Depends(get_db)
 ) -> dict:
     """등록된 근무자 필수"""
-    telegram_id = user.get("telegram_id")
-    if not telegram_id:
-        raise HTTPException(status_code=401, detail="유효하지 않은 사용자")
+    worker = None
 
-    worker = db.get_worker_by_telegram_id(telegram_id)
+    # 1. telegram_id로 찾기
+    telegram_id = user.get("telegram_id")
+    if telegram_id:
+        worker = db.get_worker_by_telegram_id(telegram_id)
+
+    # 2. phone으로 찾기
+    if not worker:
+        phone = user.get("phone")
+        if phone:
+            worker = db.get_worker_by_phone(phone)
+
+    # 3. user_id로 연결된 worker 찾기
+    if not worker:
+        user_id = user.get("user_id") or user.get("sub")
+        if user_id:
+            worker = db.get_worker_by_user_id(user_id)
+
     if not worker:
         raise HTTPException(status_code=403, detail="등록된 근무자가 아닙니다")
 
