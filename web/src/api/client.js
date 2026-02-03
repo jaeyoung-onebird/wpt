@@ -130,8 +130,6 @@ export const adminAPI = {
   updateApplicationStatus: (appId, data) => api.patch(`/api/applications/${appId}/status`, data),
   getEventAttendance: (eventId) => api.get(`/api/admin/events/${eventId}/attendance`),
   forceCheckOut: (id) => api.post(`/api/attendance/${id}/check-out`),
-  manualCheckIn: (id) => api.post(`/api/admin/attendance/${id}/manual-checkin`),
-  manualCheckOut: (id) => api.post(`/api/admin/attendance/${id}/manual-checkout`),
   // Settings
   getSettings: () => api.get('/api/admin/settings'),
   addAdminPhone: (phone) => api.post('/api/admin/settings/admin-phones', { phone }),

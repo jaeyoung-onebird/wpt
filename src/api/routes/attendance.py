@@ -1,5 +1,5 @@
 """Attendance Routes"""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from io import BytesIO
 from datetime import datetime
@@ -868,9 +868,9 @@ async def get_confirmed_workers_with_gps(
 @router.post("/admin/check-in/{application_id}")
 async def admin_check_in_worker(
     application_id: int,
-    manual: bool = False,
-    latitude: float = None,
-    longitude: float = None,
+    manual: bool = Query(False),
+    latitude: float = Query(None),
+    longitude: float = Query(None),
     admin: dict = Depends(require_admin),
     db: Database = Depends(get_db)
 ):
@@ -943,9 +943,9 @@ async def admin_check_in_worker(
 @router.post("/admin/check-out/{attendance_id}")
 async def admin_check_out_worker(
     attendance_id: int,
-    manual: bool = False,
-    latitude: float = None,
-    longitude: float = None,
+    manual: bool = Query(False),
+    latitude: float = Query(None),
+    longitude: float = Query(None),
     admin: dict = Depends(require_admin),
     db: Database = Depends(get_db)
 ):
