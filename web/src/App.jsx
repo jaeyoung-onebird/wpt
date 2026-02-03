@@ -13,7 +13,6 @@ import Attendance from './pages/Attendance';
 import WorkHistory from './pages/WorkHistory';
 import Profile from './pages/Profile';
 import Register from './pages/Register';
-import Blockchain from './pages/Blockchain';
 import Badges from './pages/Badges';
 import BadgeDetail from './pages/BadgeDetail';
 
@@ -82,14 +81,7 @@ function AppRoutes() {
     <Routes>
       {/* 공개 라우트 */}
       <Route path="/login" element={<Login />} />
-      <Route
-        path="/register"
-        element={
-          <PrivateRoute>
-            <Register />
-          </PrivateRoute>
-        }
-      />
+      <Route path="/register" element={<Register />} />
 
       {/* 레이아웃 적용 라우트 */}
       <Route element={<Layout />}>
@@ -132,7 +124,6 @@ function AppRoutes() {
             </PrivateRoute>
           }
         />
-        <Route path="/blockchain" element={<Blockchain />} />
         <Route
           path="/badges"
           element={

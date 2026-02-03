@@ -14,6 +14,7 @@ class ApplicationStatus(str, Enum):
 class ApplicationCreate(BaseModel):
     """지원 생성"""
     event_id: int
+    selected_dates: list[str] | None = None  # YYYY-MM-DD 형식의 날짜 리스트 (며칠짜리 행사용)
 
 
 class ApplicationStatusUpdate(BaseModel):
@@ -32,9 +33,11 @@ class ApplicationResponse(BaseModel):
     confirmed_at: datetime | str | None = None
     confirmed_by: int | None = None
     rejection_reason: str | None = None
+    selected_dates: list[str] | None = None  # 선택한 근무 날짜 목록
     # 관계 데이터
     event_title: str | None = None
     event_date: str | None = None
+    end_date: str | None = None  # 종료일 추가
     worker_name: str | None = None
     worker_phone: str | None = None
 

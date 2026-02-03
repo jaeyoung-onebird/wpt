@@ -1,6 +1,7 @@
 """Attendance Schemas"""
 from pydantic import BaseModel
 from enum import Enum
+from typing import Any
 
 
 class AttendanceStatus(str, Enum):
@@ -22,17 +23,18 @@ class CheckOutRequest(BaseModel):
 class AttendanceResponse(BaseModel):
     """출석 정보 응답"""
     id: int
-    application_id: int
+    application_id: int | None = None
     event_id: int
     worker_id: int
-    check_in_code: str
-    check_in_time: str | None = None
-    check_out_time: str | None = None
+    work_date: str | None = None  # 근무 날짜 (YYYY-MM-DD, 며칠짜리 행사용)
+    check_in_code: str | None = None
+    check_in_time: Any = None
+    check_out_time: Any = None
     worked_minutes: int | None = None
     status: str
     # 관계 데이터
     event_title: str | None = None
-    event_date: str | None = None
+    event_date: Any = None
     worker_name: str | None = None
     pay_amount: int | None = None
     # 블록체인 정보
@@ -60,12 +62,21 @@ class ChainLogResponse(BaseModel):
     tx_hash: str | None = None
     block_number: int | None = None
     network: str = "amoy"
-    recorded_at: str | None = None
-    created_at: str | None = None
+    recorded_at: Any = None
+    created_at: Any = None
+    metadata_hash: str | None = None
     status: str | None = None
     # 관계 데이터
     event_title: str | None = None
-    event_date: str | None = None
+    event_date: Any = None
+    pay_amount: int | None = None
+    location: str | None = None
+    worked_minutes: int | None = None
+    check_in_time: Any = None
+    check_out_time: Any = None
+    worker_id: int | None = None
+    worker_name: str | None = None
+    worker_birth_date: Any = None
 
     class Config:
         from_attributes = True

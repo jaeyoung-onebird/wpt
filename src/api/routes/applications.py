@@ -17,6 +17,7 @@ def _enrich_application(app: dict, db: Database) -> dict:
     if event:
         app["event_title"] = event.get("title")
         app["event_date"] = event.get("event_date")
+        app["pay_amount"] = event.get("pay_amount")
 
     # 근무자 정보
     with db.get_connection() as conn:

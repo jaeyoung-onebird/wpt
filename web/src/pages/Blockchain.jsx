@@ -18,10 +18,6 @@ export default function Blockchain() {
   const [selectedLog, setSelectedLog] = useState(null);
   const [verifiedData, setVerifiedData] = useState(null);
 
-  // 출석체크 관련 상태
-  const [checkinStatus, setCheckinStatus] = useState(null);
-  const [checkingIn, setCheckingIn] = useState(false);
-
   // 크레딧 내역 모달
   const [showCreditHistory, setShowCreditHistory] = useState(false);
   const [creditHistory, setCreditHistory] = useState([]);
@@ -52,42 +48,11 @@ export default function Blockchain() {
         const { data } = await chainAPI.getMyLogs();
         setMyLogs(data.logs || []);
         setTokens(data.tokens || 0);
-
-        // 출석체크 상태 조회
-        try {
-          const { data: checkin } = await creditsAPI.getCheckinStatus();
-          setCheckinStatus(checkin);
-        } catch (e) {
-          console.error('Failed to load checkin status:', e);
-        }
       }
     } catch (error) {
       console.error('Failed to load blockchain data:', error);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleCheckin = async () => {
-    if (checkingIn || checkinStatus?.checked_in_today) return;
-
-    setCheckingIn(true);
-    try {
-      const { data } = await creditsAPI.checkin();
-      alert(data.message);
-
-      // 상태 갱신
-      setTokens(data.new_balance);
-      setCheckinStatus({
-        checked_in_today: true,
-        streak_days: data.streak_days,
-        today_reward: data.reward_amount,
-        next_reward: 1
-      });
-    } catch (error) {
-      alert(error.response?.data?.detail || '출석체크에 실패했습니다');
-    } finally {
-      setCheckingIn(false);
     }
   };
 
@@ -287,6 +252,23 @@ export default function Blockchain() {
         </p>
       </div>
 
+      {/* 안내 메시지 */}
+      {worker && (
+        <div className="card" style={{ background: 'linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 100%)' }}>
+          <div className="flex items-start gap-3">
+            <div className="text-2xl">ℹ️</div>
+            <div>
+              <p className="font-medium text-sm mb-1" style={{ color: 'var(--color-primary)' }}>
+                출석체크는 지갑에서
+              </p>
+              <p className="text-xs" style={{ color: 'var(--color-text-sub)' }}>
+                WPT 크레딧 받기와 출석체크는 "지갑" 메뉴에서 이용하세요
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 네트워크 상태 (관리자용) */}
       {isAdmin && networkStatus && (
         <div className="card" style={{ background: 'linear-gradient(135deg, #334155 0%, #1e293b 100%)' }}>
@@ -324,64 +306,6 @@ export default function Blockchain() {
                 {shortenAddress(networkStatus.wallet_address)} &rarr;
               </a>
             </div>
-          )}
-        </div>
-      )}
-
-      {/* 일일 출석체크 (근무자) */}
-      {worker && (
-        <div className="card" style={{ backgroundColor: 'var(--color-bg-card)' }}>
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <p className="font-semibold" style={{ color: 'var(--color-text-title)' }}>일일 출석체크</p>
-              <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-sub)' }}>
-                매일 출석체크하고 크레딧을 받으세요
-              </p>
-            </div>
-            {checkinStatus && (
-              <div className="text-right">
-                <p className="text-xs" style={{ color: 'var(--color-text-sub)' }}>연속 출석</p>
-                <p className="font-bold text-lg" style={{ color: 'var(--color-primary)' }}>
-                  {checkinStatus.streak_days}일
-                </p>
-              </div>
-            )}
-          </div>
-
-          {checkinStatus?.checked_in_today ? (
-            <div className="flex items-center justify-center gap-2 py-3 rounded-xl" style={{ backgroundColor: 'var(--color-success-light)' }}>
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} style={{ color: 'var(--color-success)' }}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <span className="font-medium" style={{ color: 'var(--color-success)' }}>
-                오늘 출석완료! +{checkinStatus.today_reward} 크레딧
-              </span>
-            </div>
-          ) : (
-            <button
-              onClick={handleCheckin}
-              disabled={checkingIn}
-              className="w-full py-3 rounded-xl font-semibold text-white flex items-center justify-center gap-2"
-              style={{ backgroundColor: 'var(--color-primary)' }}
-            >
-              {checkingIn ? (
-                <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                  출석체크 중...
-                </>
-              ) : (
-                <>
-                  <span className="text-lg">👆</span>
-                  출석체크 (+{checkinStatus?.next_reward || 1} 크레딧)
-                </>
-              )}
-            </button>
-          )}
-
-          {checkinStatus && checkinStatus.streak_days > 0 && !checkinStatus.checked_in_today && (
-            <p className="text-xs text-center mt-2" style={{ color: 'var(--color-text-disabled)' }}>
-              7일 연속 출석 시 보너스 크레딧!
-            </p>
           )}
         </div>
       )}

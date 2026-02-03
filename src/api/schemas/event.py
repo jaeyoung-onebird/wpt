@@ -16,7 +16,8 @@ class EventStatus(str, Enum):
 class EventCreate(BaseModel):
     """행사 생성"""
     title: str
-    event_date: str  # YYYY-MM-DD
+    event_date: str  # YYYY-MM-DD (시작일)
+    end_date: str | None = None  # YYYY-MM-DD (종료일, 기본값은 시작일과 동일)
     start_time: str | None = None  # HH:MM
     end_time: str | None = None  # HH:MM
     location: str | None = None  # 상세 장소
@@ -33,12 +34,17 @@ class EventCreate(BaseModel):
     requires_security_cert: bool = False
     manager_name: str | None = None
     manager_phone: str | None = None
+    location_address: str | None = None  # GPS용 전체 주소
+    location_lat: float | None = None  # GPS 위도
+    location_lng: float | None = None  # GPS 경도
+    location_radius: int | None = 100  # GPS 인정 범위 (미터)
 
 
 class EventUpdate(BaseModel):
     """행사 수정"""
     title: str | None = None
     event_date: str | None = None
+    end_date: str | None = None
     start_time: str | None = None
     end_time: str | None = None
     location: str | None = None
@@ -56,6 +62,10 @@ class EventUpdate(BaseModel):
     manager_name: str | None = None
     manager_phone: str | None = None
     status: EventStatus | None = None
+    location_address: str | None = None  # GPS용 전체 주소
+    location_lat: float | None = None  # GPS 위도
+    location_lng: float | None = None  # GPS 경도
+    location_radius: int | None = None  # GPS 인정 범위 (미터)
 
 
 class EventResponse(BaseModel):
@@ -64,6 +74,7 @@ class EventResponse(BaseModel):
     short_code: str
     title: str
     event_date: str
+    end_date: str | None = None
     start_time: str | None = None
     end_time: str | None = None
     location: str | None = None
@@ -87,6 +98,10 @@ class EventResponse(BaseModel):
     created_at: datetime | None = None
     application_count: int = 0
     confirmed_count: int = 0
+    location_address: str | None = None  # GPS용 전체 주소
+    location_radius: int | None = None  # GPS 인정 범위 (미터)
+    location_lat: float | None = None  # GPS 위도
+    location_lng: float | None = None  # GPS 경도
 
     @field_serializer('created_at')
     def serialize_created_at(self, dt: datetime | None) -> str | None:

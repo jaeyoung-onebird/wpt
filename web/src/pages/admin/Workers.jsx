@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { adminAPI, workersAPI, bigdataAPI } from '../../api/client';
+import { adminAPI, workersAPI } from '../../api/client';
+import LocationPicker from '../../components/LocationPicker';
 
 export default function AdminWorkers() {
   const [workers, setWorkers] = useState([]);
@@ -11,39 +12,10 @@ export default function AdminWorkers() {
   const [saving, setSaving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  // 지역 관련 상태
-  const [regions, setRegions] = useState([]);
-  const [sidoList, setSidoList] = useState([]);
-  const [sigunguList, setSigunguList] = useState([]);
-  const [selectedSido, setSelectedSido] = useState('');
-
   useEffect(() => {
     window.scrollTo(0, 0);
     loadWorkers();
-    loadRegions();
   }, []);
-
-  const loadRegions = async () => {
-    try {
-      const { data } = await bigdataAPI.getRegions();
-      const regionsData = data.regions || [];
-      setRegions(regionsData);
-      const uniqueSido = [...new Set(regionsData.map(r => r.sido))];
-      setSidoList(uniqueSido);
-    } catch (error) {
-      console.error('Failed to load regions:', error);
-    }
-  };
-
-  // 시도 선택 시 시군구 필터링
-  useEffect(() => {
-    if (selectedSido) {
-      const filtered = regions.filter(r => r.sido === selectedSido);
-      setSigunguList(filtered);
-    } else {
-      setSigunguList([]);
-    }
-  }, [selectedSido, regions]);
 
   const loadWorkers = async () => {
     try {
@@ -71,22 +43,13 @@ export default function AdminWorkers() {
   };
 
   const handleStartEdit = () => {
-    // 기존 region_id로 sido 설정
-    if (selectedWorker.region_id) {
-      const region = regions.find(r => r.id === selectedWorker.region_id);
-      if (region) {
-        setSelectedSido(region.sido);
-      }
-    } else {
-      setSelectedSido('');
-    }
-
     setEditData({
       name: selectedWorker.name || '',
       phone: selectedWorker.phone || '',
       birth_date: selectedWorker.birth_date || '',
       residence: selectedWorker.residence || '',
-      region_id: selectedWorker.region_id || '',
+      residence_lat: selectedWorker.residence_lat || null,
+      residence_lng: selectedWorker.residence_lng || null,
       bank_name: selectedWorker.bank_name || '',
       bank_account: selectedWorker.bank_account || '',
       driver_license: selectedWorker.driver_license || false,
@@ -95,18 +58,30 @@ export default function AdminWorkers() {
     setEditMode(true);
   };
 
+  const handleResidenceSelect = (address, latitude, longitude) => {
+    setEditData({
+      ...editData,
+      residence: address,
+      residence_lat: latitude,
+      residence_lng: longitude,
+    });
+  };
+
   const handleSaveEdit = async () => {
     setSaving(true);
     try {
-      // 거주지역 텍스트 생성
-      let saveData = { ...editData };
-      if (editData.region_id) {
-        const region = regions.find(r => r.id === parseInt(editData.region_id));
-        if (region) {
-          saveData.residence = `${region.sido} ${region.sigungu}`;
-        }
-        saveData.region_id = parseInt(editData.region_id);
-      }
+      const saveData = {
+        name: editData.name,
+        phone: editData.phone,
+        birth_date: editData.birth_date,
+        residence: editData.residence,
+        residence_lat: editData.residence_lat,
+        residence_lng: editData.residence_lng,
+        bank_name: editData.bank_name,
+        bank_account: editData.bank_account,
+        driver_license: editData.driver_license,
+        security_cert: editData.security_cert,
+      };
 
       await workersAPI.update(selectedWorker.id, saveData);
       // 목록 새로고침
@@ -115,7 +90,6 @@ export default function AdminWorkers() {
       const { data } = await workersAPI.get(selectedWorker.id);
       setSelectedWorker(data);
       setEditMode(false);
-      setSelectedSido('');
       alert('저장되었습니다');
     } catch (error) {
       alert(error.response?.data?.detail || '저장에 실패했습니다');
@@ -297,32 +271,10 @@ export default function AdminWorkers() {
                 </div>
                 <div>
                   <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-sub)' }}>거주지역</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <select
-                      value={selectedSido}
-                      onChange={(e) => {
-                        setSelectedSido(e.target.value);
-                        setEditData({ ...editData, region_id: '' });
-                      }}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">시/도</option>
-                      {sidoList.map((sido) => (
-                        <option key={sido} value={sido}>{sido}</option>
-                      ))}
-                    </select>
-                    <select
-                      value={editData.region_id}
-                      onChange={(e) => setEditData({ ...editData, region_id: e.target.value })}
-                      disabled={!selectedSido}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
-                    >
-                      <option value="">시/군/구</option>
-                      {sigunguList.map((region) => (
-                        <option key={region.id} value={region.id}>{region.sigungu}</option>
-                      ))}
-                    </select>
-                  </div>
+                  <LocationPicker
+                    address={editData.residence}
+                    onLocationSelect={handleResidenceSelect}
+                  />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>

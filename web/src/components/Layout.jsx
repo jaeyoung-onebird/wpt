@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { notificationsAPI } from '../api/client';
 
 // SVG 아이콘들
 const HomeIcon = ({ active }) => (
@@ -85,6 +86,25 @@ export default function Layout() {
   // 프로필 드롭다운 상태
   const [showProfileMenu, setShowProfileMenu] = useState(false);
 
+  // 알림 개수
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  // 알림 개수 조회
+  useEffect(() => {
+    if (user) {
+      loadUnreadCount();
+    }
+  }, [user]);
+
+  const loadUnreadCount = async () => {
+    try {
+      const { data } = await notificationsAPI.getUnreadCount();
+      setUnreadCount(data.unread_count || 0);
+    } catch (error) {
+      console.error('Failed to load unread count:', error);
+    }
+  };
+
   // 모드 토글
   const toggleAdminMode = () => {
     const newMode = !adminMode;
@@ -115,7 +135,7 @@ export default function Layout() {
   const adminNavItems = [
     { path: '/admin', icon: AdminDashboardIcon, label: '대시보드' },
     { path: '/admin/events', icon: EventIcon, label: '행사' },
-    { path: '/admin/workers', icon: MyIcon, label: '인력' },
+    { path: '/admin/workers', icon: MyIcon, label: 'HR' },
     { path: '/admin/wpt', icon: TokenIcon, label: '토큰' },
     { path: '/admin/settings', icon: SettingsIcon, label: '설정' },
   ];
@@ -143,7 +163,7 @@ export default function Layout() {
             {/* 알림 버튼 */}
             {user && (
               <Link to="/notifications" className="p-2 rounded-full hover:bg-gray-100">
-                <BellIcon hasNotifications={true} />
+                <BellIcon hasNotifications={unreadCount > 0} />
               </Link>
             )}
 

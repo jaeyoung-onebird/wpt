@@ -1446,7 +1446,13 @@ class Database:
                 ORDER BY created_at DESC
                 LIMIT %s
             """, (worker_id, limit))
-            return [dict(row) for row in cursor.fetchall()]
+            notifications = []
+            for row in cursor.fetchall():
+                notif = dict(row)
+                if notif.get('created_at'):
+                    notif['created_at'] = notif['created_at'].isoformat()
+                notifications.append(notif)
+            return notifications
 
     def get_unread_notification_count(self, worker_id: int) -> int:
         """읽지 않은 알림 수"""
@@ -2379,3 +2385,265 @@ class Database:
                 }
 
         return None  # 모든 배지 획득 완료
+
+    # ==================== Location & GPS Methods ====================
+
+    def update_event_location(self, event_id: int, address: str, latitude: float,
+                             longitude: float, radius: int = 100):
+        """행사 위치 정보 업데이트"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE events
+                SET location_address = %s,
+                    location_lat = %s,
+                    location_lng = %s,
+                    location_radius = %s
+                WHERE id = %s
+            """, (address, latitude, longitude, radius, event_id))
+            conn.commit()
+
+    def save_worker_location(self, worker_id: int, event_id: int,
+                            latitude: float, longitude: float):
+        """근무자 GPS 위치 저장"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            # 최근 10분 이내 위치 정보만 유지하고 새로운 위치 추가
+            cursor.execute("""
+                INSERT INTO worker_locations (worker_id, event_id, latitude, longitude)
+                VALUES (%s, %s, %s, %s)
+            """, (worker_id, event_id, latitude, longitude))
+            conn.commit()
+
+    def get_worker_location(self, worker_id: int, event_id: int) -> Optional[Dict]:
+        """근무자의 최근 위치 정보 조회"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute("""
+                SELECT * FROM worker_locations
+                WHERE worker_id = %s AND event_id = %s
+                ORDER BY updated_at DESC
+                LIMIT 1
+            """, (worker_id, event_id))
+            result = cursor.fetchone()
+            return dict(result) if result else None
+
+    def calculate_distance(self, lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+        """
+        두 GPS 좌표 간의 거리 계산 (Haversine formula)
+        Returns: 거리 (미터)
+        """
+        from math import radians, cos, sin, asin, sqrt
+
+        # 지구 반지름 (미터)
+        R = 6371000
+
+        # 라디안으로 변환
+        lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
+
+        # Haversine formula
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+        a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+        c = 2 * asin(sqrt(a))
+
+        return R * c
+
+    def get_nearby_workers(self, event_id: int) -> List[Dict]:
+        """
+        행사 위치 근처에 있는 근무자 목록 조회
+        Returns: 범위 내 근무자 정보 (거리 포함)
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+            # 행사 위치 정보 가져오기
+            cursor.execute("""
+                SELECT location_lat, location_lng, location_radius
+                FROM events WHERE id = %s
+            """, (event_id,))
+            event_location = cursor.fetchone()
+
+            if not event_location or not event_location['location_lat']:
+                return []
+
+            event_lat = float(event_location['location_lat'])
+            event_lng = float(event_location['location_lng'])
+            radius = event_location['location_radius'] or 100
+
+            # 해당 행사에 지원한 근무자들의 최근 위치 정보 가져오기
+            cursor.execute("""
+                SELECT
+                    wl.worker_id,
+                    wl.latitude,
+                    wl.longitude,
+                    wl.updated_at,
+                    w.name as worker_name,
+                    w.phone as worker_phone,
+                    a.check_in_time,
+                    a.check_out_time
+                FROM worker_locations wl
+                JOIN workers w ON wl.worker_id = w.id
+                JOIN applications app ON app.worker_id = w.id AND app.event_id = %s
+                LEFT JOIN attendance a ON a.worker_id = w.id AND a.event_id = %s
+                WHERE wl.event_id = %s
+                    AND wl.updated_at > NOW() - INTERVAL '10 minutes'
+                ORDER BY wl.updated_at DESC
+            """, (event_id, event_id, event_id))
+
+            workers = []
+            for row in cursor.fetchall():
+                worker = dict(row)
+
+                # 거리 계산
+                distance = self.calculate_distance(
+                    event_lat, event_lng,
+                    float(worker['latitude']), float(worker['longitude'])
+                )
+
+                worker['distance_meters'] = int(distance)
+                worker['within_range'] = distance <= radius
+
+                workers.append(worker)
+
+            # 거리순으로 정렬
+            workers.sort(key=lambda x: x['distance_meters'])
+
+            return workers
+
+    def create_attendance_approval(self, worker_id: int, event_id: int,
+                                   approval_type: str, distance_meters: int = None) -> int:
+        """출근 승인 요청 생성"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # 먼저 출석 기록 생성 (pending 상태)
+            cursor.execute("""
+                INSERT INTO attendance (worker_id, event_id, status)
+                VALUES (%s, %s, 'pending')
+                ON CONFLICT (worker_id, event_id)
+                DO UPDATE SET status = 'pending'
+                RETURNING id
+            """, (worker_id, event_id))
+            attendance_id = cursor.fetchone()[0]
+
+            # 승인 요청 생성
+            cursor.execute("""
+                INSERT INTO attendance_approvals
+                (attendance_id, worker_id, event_id, approval_type, distance_meters, status)
+                VALUES (%s, %s, %s, %s, %s, 'pending')
+                RETURNING id
+            """, (attendance_id, worker_id, event_id, approval_type, distance_meters))
+
+            approval_id = cursor.fetchone()[0]
+            conn.commit()
+            return approval_id
+
+    def get_pending_approvals(self, event_id: int) -> List[Dict]:
+        """행사의 대기 중인 승인 요청 목록"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute("""
+                SELECT
+                    aa.*,
+                    w.name as worker_name,
+                    w.phone as worker_phone,
+                    a.check_in_time,
+                    a.check_out_time
+                FROM attendance_approvals aa
+                JOIN workers w ON aa.worker_id = w.id
+                JOIN attendance a ON aa.attendance_id = a.id
+                WHERE aa.event_id = %s AND aa.status = 'pending'
+                ORDER BY aa.created_at ASC
+            """, (event_id,))
+
+            results = cursor.fetchall()
+            return [dict(row) for row in results]
+
+    def approve_attendance(self, approval_id: int, admin_id: int,
+                          check_in_time = None) -> bool:
+        """출근 승인 처리"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+            # 승인 정보 가져오기
+            cursor.execute("""
+                SELECT attendance_id, worker_id, event_id
+                FROM attendance_approvals
+                WHERE id = %s
+            """, (approval_id,))
+            approval = cursor.fetchone()
+
+            if not approval:
+                return False
+
+            # 승인 상태 업데이트
+            cursor.execute("""
+                UPDATE attendance_approvals
+                SET status = 'approved',
+                    approved_by = %s,
+                    approved_at = NOW()
+                WHERE id = %s
+            """, (admin_id, approval_id))
+
+            # 출석 기록 업데이트
+            if check_in_time is None:
+                check_in_time = now_kst_naive()
+
+            cursor.execute("""
+                UPDATE attendance
+                SET check_in_time = %s,
+                    status = 'present'
+                WHERE id = %s
+            """, (check_in_time, approval['attendance_id']))
+
+            conn.commit()
+            return True
+
+    def batch_approve_attendances(self, approval_ids: List[int], admin_id: int) -> int:
+        """일괄 출근 승인 처리"""
+        approved_count = 0
+        for approval_id in approval_ids:
+            if self.approve_attendance(approval_id, admin_id):
+                approved_count += 1
+        return approved_count
+
+    def generate_qr_code_for_event(self, event_id: int) -> str:
+        """행사용 QR 코드 생성 (시간 기반 토큰)"""
+        import hashlib
+        import time
+
+        # 5분마다 변경되는 토큰 생성
+        timestamp = int(time.time() / 300)  # 5분 단위
+        token = f"{event_id}:{timestamp}:{os.getenv('SECRET_KEY', 'default-secret')}"
+        qr_code = hashlib.sha256(token.encode()).hexdigest()[:16]
+
+        # DB에 저장
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE events
+                SET qr_code = %s
+                WHERE id = %s
+            """, (qr_code, event_id))
+            conn.commit()
+
+        return qr_code
+
+    def verify_qr_code(self, event_id: int, qr_code: str) -> bool:
+        """QR 코드 검증 (시간 기반 토큰, 5분 유효)"""
+        import hashlib
+        import time
+
+        # 현재 토큰과 이전 토큰(5분 전) 모두 허용
+        current_timestamp = int(time.time() / 300)
+
+        for offset in [0, -1]:  # 현재 시간과 5분 전
+            timestamp = current_timestamp + offset
+            token = f"{event_id}:{timestamp}:{os.getenv('SECRET_KEY', 'default-secret')}"
+            expected_qr = hashlib.sha256(token.encode()).hexdigest()[:16]
+
+            if qr_code == expected_qr:
+                return True
+
+        return False

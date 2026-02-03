@@ -186,9 +186,16 @@ export default function EventDetail() {
             <div className="flex items-start gap-3">
               <span className="text-xl">📅</span>
               <div>
-                <p className="font-medium" style={{ color: 'var(--color-text)' }}>{event.event_date}</p>
+                <p className="font-medium" style={{ color: 'var(--color-text)' }}>
+                  {event.event_date}
+                  {(() => {
+                    const date = new Date(event.event_date);
+                    const days = ['일', '월', '화', '수', '목', '금', '토'];
+                    return ` (${days[date.getDay()]})`;
+                  })()}
+                </p>
                 {event.start_time && (
-                  <p className="text-sm" style={{ color: 'var(--color-text-sub)' }}>{event.start_time} ~ {event.end_time || ''}</p>
+                  <p className="font-medium" style={{ color: 'var(--color-text)' }}>{event.start_time} ~ {event.end_time || ''}</p>
                 )}
               </div>
             </div>

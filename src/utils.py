@@ -415,3 +415,118 @@ def extract_yymmdd(date_str: str) -> str:
 
     # 파싱 실패시 현재 날짜 사용 (한국 시간)
     return now_kst().strftime("%y%m%d")
+
+
+# ==================== Geocoding Functions ====================
+
+def get_coordinates_from_address(address: str):
+    """
+    주소를 GPS 좌표로 변환 (Kakao Maps API 사용)
+
+    Args:
+        address: 변환할 주소 (한글 주소 가능)
+
+    Returns:
+        (latitude, longitude) 튜플 또는 None
+    """
+    import requests
+
+    api_key = os.getenv('KAKAO_REST_API_KEY')
+
+    if not api_key:
+        logger.warning("KAKAO_REST_API_KEY가 설정되지 않았습니다. 기본 좌표를 사용합니다.")
+        # 서울시청 좌표를 기본값으로 사용
+        return (37.5665, 126.9780)
+
+    try:
+        url = "https://dapi.kakao.com/v2/local/search/address.json"
+        headers = {
+            'Authorization': f'KakaoAK {api_key}'
+        }
+        params = {
+            'query': address
+        }
+
+        response = requests.get(url, headers=headers, params=params, timeout=5)
+        response.raise_for_status()
+
+        data = response.json()
+
+        if data.get('documents') and len(data['documents']) > 0:
+            location = data['documents'][0]
+            # address 타입과 road_address 타입 모두 지원
+            if 'y' in location and 'x' in location:
+                latitude = float(location['y'])
+                longitude = float(location['x'])
+            elif 'address' in location:
+                latitude = float(location['address']['y'])
+                longitude = float(location['address']['x'])
+            else:
+                logger.error(f"좌표 정보를 찾을 수 없습니다: {location}")
+                return None
+
+            logger.info(f"주소 '{address}'를 좌표로 변환: ({latitude}, {longitude})")
+            return (latitude, longitude)
+        else:
+            logger.error(f"주소 변환 실패: 검색 결과 없음")
+            return None
+
+    except Exception as e:
+        logger.error(f"좌표 변환 중 오류: {e}")
+        return None
+
+
+def get_address_from_coordinates(latitude: float, longitude: float):
+    """
+    GPS 좌표를 주소로 변환 (역지오코딩, Kakao Maps API 사용)
+
+    Args:
+        latitude: 위도
+        longitude: 경도
+
+    Returns:
+        주소 문자열 또는 None
+    """
+    import requests
+
+    api_key = os.getenv('KAKAO_REST_API_KEY')
+
+    if not api_key:
+        logger.warning("KAKAO_REST_API_KEY가 설정되지 않았습니다.")
+        return None
+
+    try:
+        url = "https://dapi.kakao.com/v2/local/geo/coord2address.json"
+        headers = {
+            'Authorization': f'KakaoAK {api_key}'
+        }
+        params = {
+            'x': longitude,
+            'y': latitude
+        }
+
+        response = requests.get(url, headers=headers, params=params, timeout=5)
+        response.raise_for_status()
+
+        data = response.json()
+
+        if data.get('documents') and len(data['documents']) > 0:
+            doc = data['documents'][0]
+            # road_address(도로명) 우선, 없으면 address(지번) 사용
+            if doc.get('road_address'):
+                address = doc['road_address']['address_name']
+            elif doc.get('address'):
+                address = doc['address']['address_name']
+            else:
+                logger.error(f"주소 정보를 찾을 수 없습니다: {doc}")
+                return None
+
+            logger.info(f"좌표 ({latitude}, {longitude})를 주소로 변환: {address}")
+            return address
+        else:
+            logger.error(f"역지오코딩 실패: 검색 결과 없음")
+            return None
+
+    except Exception as e:
+        logger.error(f"주소 변환 중 오류: {e}")
+        return None

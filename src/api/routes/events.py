@@ -6,6 +6,7 @@ from ..schemas.event import (
     EventCreate, EventUpdate, EventResponse, EventListResponse, EventStatus
 )
 from db import Database
+from utils import get_coordinates_from_address
 
 router = APIRouter()
 
@@ -63,6 +64,29 @@ async def create_event(
         region_id=data.region_id,
         category_id=data.category_id
     )
+
+    # GPS 좌표 저장
+    if data.location_address:
+        # 프론트엔드에서 좌표를 직접 보낸 경우
+        if data.location_lat is not None and data.location_lng is not None:
+            latitude = data.location_lat
+            longitude = data.location_lng
+        else:
+            # 좌표가 없으면 주소를 GPS 좌표로 변환
+            coordinates = get_coordinates_from_address(data.location_address)
+            if coordinates:
+                latitude, longitude = coordinates
+            else:
+                latitude, longitude = None, None
+
+        if latitude is not None and longitude is not None:
+            db.update_event_location(
+                event_id=event_id,
+                address=data.location_address,
+                latitude=latitude,
+                longitude=longitude,
+                radius=data.location_radius or 100  # 기본 100m 반경
+            )
 
     event = db.get_event(event_id)
     return EventResponse(**_enrich_event(event, db))
@@ -131,6 +155,42 @@ async def update_event(
         # status는 별도 처리
         if "status" in update_data:
             db.update_event_status(event_id, update_data.pop("status"))
+
+        # location_address가 변경된 경우 GPS 좌표 업데이트
+        if "location_address" in update_data:
+            location_address = update_data.get("location_address")
+            location_radius = update_data.get("location_radius", event.get("location_radius", 100))
+
+            if location_address:
+                # 프론트엔드에서 좌표를 직접 보낸 경우
+                if "location_lat" in update_data and "location_lng" in update_data:
+                    latitude = update_data.get("location_lat")
+                    longitude = update_data.get("location_lng")
+                else:
+                    # 좌표가 없으면 주소를 GPS 좌표로 변환
+                    coordinates = get_coordinates_from_address(location_address)
+                    if coordinates:
+                        latitude, longitude = coordinates
+                    else:
+                        latitude, longitude = None, None
+
+                if latitude is not None and longitude is not None:
+                    db.update_event_location(
+                        event_id=event_id,
+                        address=location_address,
+                        latitude=latitude,
+                        longitude=longitude,
+                        radius=location_radius
+                    )
+        # location_radius만 변경된 경우
+        elif "location_radius" in update_data and event.get("location_address"):
+            db.update_event_location(
+                event_id=event_id,
+                address=event.get("location_address"),
+                latitude=event.get("location_lat"),
+                longitude=event.get("location_lng"),
+                radius=update_data.get("location_radius")
+            )
 
         # 나머지 필드 업데이트
         if update_data:

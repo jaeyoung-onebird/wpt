@@ -117,29 +117,43 @@ export function safeNumber(value, defaultValue = 0) {
 }
 
 /**
- * 시간 포맷 (HH:MM:SS) - 소숫점 제거
+ * 시간 포맷 (HH:MM) - T 제거, 분까지만 표시
  * @param {string|null|undefined} timeStr - 시간 문자열 (datetime 또는 time)
  * @param {string} fallback - null일 때 표시할 값 (기본: '-')
  * @returns {string}
  */
 export function formatTime(timeStr, fallback = '-') {
   if (!timeStr) return fallback;
+  // T 구분자를 공백으로 변경 (ISO format 처리)
+  const normalized = timeStr.replace('T', ' ');
   // datetime 형식이면 시간 부분만 추출 (2026-01-24 17:24:31.829411 → 17:24:31)
-  const timePart = timeStr.includes(' ') ? timeStr.split(' ')[1] : timeStr;
+  const timePart = normalized.includes(' ') ? normalized.split(' ')[1] : normalized;
   // 소숫점 이하 제거 (17:24:31.829411 → 17:24:31)
-  return timePart.split('.')[0];
+  const withoutMs = timePart.split('.')[0];
+  // HH:MM:SS → HH:MM (분까지만)
+  const parts = withoutMs.split(':');
+  return parts.length >= 2 ? `${parts[0]}:${parts[1]}` : withoutMs;
 }
 
 /**
- * 날짜+시간 포맷 (YYYY-MM-DD HH:MM:SS) - 소숫점 제거
+ * 날짜+시간 포맷 (YYYY-MM-DD HH:MM) - T 제거, 분까지만 표시
  * @param {string|null|undefined} datetimeStr - datetime 문자열
  * @param {string} fallback - null일 때 표시할 값 (기본: '-')
  * @returns {string}
  */
 export function formatDateTime(datetimeStr, fallback = '-') {
   if (!datetimeStr) return fallback;
+  // T 구분자를 공백으로 변경 (ISO format 처리)
+  const normalized = datetimeStr.replace('T', ' ');
   // 소숫점 이하 제거
-  return datetimeStr.split('.')[0];
+  const withoutMs = normalized.split('.')[0];
+  // YYYY-MM-DD HH:MM:SS → YYYY-MM-DD HH:MM (분까지만)
+  const parts = withoutMs.split(':');
+  if (parts.length >= 3) {
+    // 초 부분 제거
+    return parts.slice(0, 2).join(':');
+  }
+  return withoutMs;
 }
 
 /**

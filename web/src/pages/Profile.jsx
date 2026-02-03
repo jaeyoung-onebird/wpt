@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { workersAPI, notificationsAPI, authAPI, bigdataAPI } from '../api/client';
+import LocationPicker from '../components/LocationPicker';
 
 export default function Profile() {
   const { user, worker, logout, updateWorker } = useAuth();
@@ -14,7 +15,8 @@ export default function Profile() {
     phone: worker?.phone || '',
     birth_date: worker?.birth_date || '',
     residence: worker?.residence || '',
-    region_id: worker?.region_id || '',
+    residence_lat: worker?.residence_lat || null,
+    residence_lng: worker?.residence_lng || null,
     bank_name: worker?.bank_name || '',
     bank_account: worker?.bank_account || '',
     driver_license: worker?.driver_license || false,
@@ -23,11 +25,15 @@ export default function Profile() {
   });
   const [saving, setSaving] = useState(false);
 
-  // 지역 관련 상태
-  const [regions, setRegions] = useState([]);
-  const [sidoList, setSidoList] = useState([]);
-  const [sigunguList, setSigunguList] = useState([]);
-  const [selectedSido, setSelectedSido] = useState('');
+  // 위치 핸들러
+  const handleResidenceSelect = (address, latitude, longitude) => {
+    setFormData({
+      ...formData,
+      residence: address,
+      residence_lat: latitude,
+      residence_lng: longitude,
+    });
+  };
   const [loadingWorker, setLoadingWorker] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -85,31 +91,7 @@ export default function Profile() {
 
   useEffect(() => {
     window.scrollTo(0, 0);
-    loadRegions();
   }, []);
-
-  // 지역 데이터 로드
-  const loadRegions = async () => {
-    try {
-      const { data } = await bigdataAPI.getRegions();
-      const regionsData = data.regions || [];
-      setRegions(regionsData);
-      const uniqueSido = [...new Set(regionsData.map(r => r.sido))];
-      setSidoList(uniqueSido);
-    } catch (error) {
-      console.error('Failed to load regions:', error);
-    }
-  };
-
-  // 시도 선택 시 시군구 필터링
-  useEffect(() => {
-    if (selectedSido) {
-      const filtered = regions.filter(r => r.sido === selectedSido);
-      setSigunguList(filtered);
-    } else {
-      setSigunguList([]);
-    }
-  }, [selectedSido, regions]);
 
   useEffect(() => {
     if (user && !worker && !loadingWorker) {
@@ -122,7 +104,8 @@ export default function Profile() {
             phone: data.phone || '',
             birth_date: data.birth_date || '',
             residence: data.residence || '',
-            region_id: data.region_id || '',
+            residence_lat: data.residence_lat || null,
+            residence_lng: data.residence_lng || null,
             bank_name: data.bank_name || '',
             bank_account: data.bank_account || '',
             driver_license: data.driver_license || false,
@@ -227,7 +210,8 @@ export default function Profile() {
         phone: worker.phone || '',
         birth_date: worker.birth_date || '',
         residence: worker.residence || '',
-        region_id: worker.region_id ? String(worker.region_id) : '',
+        residence_lat: worker.residence_lat || null,
+        residence_lng: worker.residence_lng || null,
         bank_name: worker.bank_name || '',
         bank_account: worker.bank_account || '',
         driver_license: worker.driver_license || false,
@@ -235,13 +219,6 @@ export default function Profile() {
         contract_signed: worker.contract_signed || false,
       });
       setPhotoError(false); // 사진 에러 상태 리셋
-      // 기존 region_id로 sido 설정
-      if (worker.region_id && regions.length > 0) {
-        const region = regions.find(r => r.id === parseInt(worker.region_id));
-        if (region) {
-          setSelectedSido(region.sido);
-        }
-      }
     }
   }, [worker, regions]);
 
@@ -252,7 +229,7 @@ export default function Profile() {
   const handleSave = async () => {
     // 필수 필드 검증
     if (!formData.name?.trim() || !formData.phone?.trim() || !formData.birth_date ||
-        !formData.region_id || !formData.bank_name?.trim() || !formData.bank_account?.trim()) {
+        !formData.residence?.trim() || !formData.bank_name?.trim() || !formData.bank_account?.trim()) {
       alert('모든 정보를 다 입력해주세요!');
       return;
     }
@@ -272,16 +249,18 @@ export default function Profile() {
     setSaving(true);
     try {
       // 저장할 데이터 구성
-      let saveData = { ...formData };
-
-      // region_id가 있으면 residence 텍스트 생성
-      if (formData.region_id) {
-        const region = regions.find(r => r.id === parseInt(formData.region_id));
-        if (region) {
-          saveData.residence = `${region.sido} ${region.sigungu}`;
-        }
-        saveData.region_id = parseInt(formData.region_id);
-      }
+      const saveData = {
+        name: formData.name,
+        phone: formData.phone,
+        birth_date: formData.birth_date,
+        residence: formData.residence,
+        residence_lat: formData.residence_lat,
+        residence_lng: formData.residence_lng,
+        bank_name: formData.bank_name,
+        bank_account: formData.bank_account,
+        driver_license: formData.driver_license,
+        security_cert: formData.security_cert,
+      };
 
       const { data } = await workersAPI.updateMe(saveData);
       updateWorker(data);
@@ -585,34 +564,10 @@ export default function Profile() {
             </div>
             <div>
               <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--color-text-sub)' }}>거주지역 <span style={{ color: 'var(--color-error)' }}>*</span></label>
-              <div className="grid grid-cols-2 gap-2">
-                <select
-                  value={selectedSido}
-                  onChange={(e) => {
-                    setSelectedSido(e.target.value);
-                    setFormData({ ...formData, region_id: '' });
-                  }}
-                  className="w-full px-4 py-3 rounded-xl text-sm"
-                  style={{ backgroundColor: 'var(--color-bg)', border: 'none', color: 'var(--color-text-title)' }}
-                >
-                  <option value="">시/도 선택</option>
-                  {sidoList.map((sido) => (
-                    <option key={sido} value={sido}>{sido}</option>
-                  ))}
-                </select>
-                <select
-                  value={formData.region_id}
-                  onChange={(e) => setFormData({ ...formData, region_id: e.target.value })}
-                  disabled={!selectedSido}
-                  className="w-full px-4 py-3 rounded-xl text-sm disabled:opacity-50"
-                  style={{ backgroundColor: 'var(--color-bg)', border: 'none', color: 'var(--color-text-title)' }}
-                >
-                  <option value="">시/군/구 선택</option>
-                  {sigunguList.map((region) => (
-                    <option key={region.id} value={String(region.id)}>{region.sigungu}</option>
-                  ))}
-                </select>
-              </div>
+              <LocationPicker
+                address={formData.residence}
+                onLocationSelect={handleResidenceSelect}
+              />
             </div>
             <div>
               <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--color-text-sub)' }}>은행명 <span style={{ color: 'var(--color-error)' }}>*</span></label>

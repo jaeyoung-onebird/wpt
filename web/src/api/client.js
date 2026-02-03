@@ -101,6 +101,21 @@ export const attendanceAPI = {
   checkOut: (id) => api.post(`/api/attendance/${id}/check-out`),
   getMyList: () => api.get('/api/attendance/me'),
   downloadPaymentStatement: (id) => api.get(`/api/attendance/${id}/payment-statement`, { responseType: 'blob' }),
+
+  // GPS Based Attendance
+  updateLocation: (eventId, latitude, longitude) =>
+    api.post('/api/attendance/location', null, { params: { event_id: eventId, latitude, longitude } }),
+
+  // 관리자 주도 출퇴근 API
+  getConfirmedWorkers: (eventId) => api.get(`/api/attendance/admin/confirmed-workers/${eventId}`),
+  adminCheckIn: (applicationId, manual = false, latitude = null, longitude = null) =>
+    api.post(`/api/attendance/admin/check-in/${applicationId}`, null, {
+      params: { manual, latitude, longitude }
+    }),
+  adminCheckOut: (attendanceId, manual = false, latitude = null, longitude = null) =>
+    api.post(`/api/attendance/admin/check-out/${attendanceId}`, null, {
+      params: { manual, latitude, longitude }
+    }),
 };
 
 // Admin API

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { eventsAPI, bigdataAPI, adminAPI } from '../../api/client';
+import LocationPicker from '../../components/LocationPicker';
 
 export default function EventForm() {
   const { id } = useParams();
@@ -25,6 +26,7 @@ export default function EventForm() {
     location: '',           // 상세 주소 (텍스트)
     region_id: '',          // 지역 ID (마스터)
     event_date: '',
+    end_date: '',           // 종료일 (기본값은 시작일과 동일)
     start_time: '09:00',
     end_time: '18:00',
     pay_amount: 130000,
@@ -37,6 +39,10 @@ export default function EventForm() {
     requires_security_cert: false,
     manager_name: '',
     manager_phone: '',
+    location_address: '',   // GPS용 전체 주소
+    location_lat: null,     // GPS 위도
+    location_lng: null,     // GPS 경도
+    location_radius: 100,   // GPS 범위 (미터)
   });
 
   useEffect(() => {
@@ -113,6 +119,7 @@ export default function EventForm() {
         location: data.location || '',
         region_id: data.region_id || '',
         event_date: data.event_date || '',
+        end_date: data.end_date || data.event_date || '',
         start_time: data.start_time || '09:00',
         end_time: data.end_time || '18:00',
         pay_amount: data.pay_amount || 130000,
@@ -125,6 +132,10 @@ export default function EventForm() {
         requires_security_cert: data.requires_security_cert || false,
         manager_name: data.manager_name || '',
         manager_phone: data.manager_phone || '',
+        location_address: data.location_address || '',
+        location_lat: data.location_lat || null,
+        location_lng: data.location_lng || null,
+        location_radius: data.location_radius || 100,
       });
     } catch (error) {
       console.error('Failed to load event:', error);
@@ -137,10 +148,19 @@ export default function EventForm() {
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setFormData({
+    const newFormData = {
       ...formData,
       [name]: type === 'checkbox' ? checked : value,
-    });
+    };
+
+    // 시작일이 변경되고 종료일이 비어있거나 시작일보다 이전이면 종료일도 시작일로 설정
+    if (name === 'event_date') {
+      if (!formData.end_date || formData.end_date < value) {
+        newFormData.end_date = value;
+      }
+    }
+
+    setFormData(newFormData);
   };
 
   const handleSidoChange = (e) => {
@@ -149,6 +169,16 @@ export default function EventForm() {
     setFormData({
       ...formData,
       region_id: '', // 시도 변경 시 시군구 초기화
+    });
+  };
+
+  const handleLocationSelect = (address, latitude, longitude) => {
+    setFormData({
+      ...formData,
+      location: address, // 기본 주소를 상세 장소에도 설정
+      location_address: address,
+      location_lat: latitude,
+      location_lng: longitude,
     });
   };
 
@@ -214,66 +244,91 @@ export default function EventForm() {
             />
           </div>
 
-          {/* 지역 선택 (시도 + 시군구) */}
+          {/* 행사장 위치 (카카오맵) */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">지역 *</label>
-            <div className="grid grid-cols-2 gap-2">
-              <select
-                value={selectedSido}
-                onChange={handleSidoChange}
-                className="input"
-                required
-              >
-                <option value="">시/도 선택</option>
-                {sidoList.map((sido) => (
-                  <option key={sido} value={sido}>{sido}</option>
-                ))}
-              </select>
-              <select
-                name="region_id"
-                value={formData.region_id}
-                onChange={handleChange}
-                className="input"
-                required
-                disabled={!selectedSido}
-              >
-                <option value="">시/군/구 선택</option>
-                {sigunguList.map((region) => (
-                  <option key={region.id} value={region.id}>{region.sigungu}</option>
-                ))}
-              </select>
-            </div>
-            {sidoList.length === 0 && (
-              <p className="text-xs text-orange-500 mt-1">
-                지역 마스터 데이터가 없습니다. 빅데이터 관리에서 초기화해주세요.
-              </p>
-            )}
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              행사장 위치 *
+            </label>
+            <LocationPicker
+              address={formData.location_address}
+              onLocationSelect={handleLocationSelect}
+            />
           </div>
 
-          {/* 상세 주소 */}
+          {/* 상세 주소 보충 (선택사항) */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">상세 장소</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              상세 장소 <span className="text-xs text-gray-500">(선택사항)</span>
+            </label>
             <input
               type="text"
               name="location"
               value={formData.location}
               onChange={handleChange}
-              placeholder="예: 삼성동 코엑스 1층"
+              placeholder="예: 3층 컨벤션홀, 메인 무대 앞 등 추가 안내사항"
               className="input"
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">근무일 *</label>
-            <input
-              type="date"
-              name="event_date"
-              value={formData.event_date}
-              onChange={handleChange}
-              required
-              className="input"
-            />
+          {/* GPS 인정 범위 */}
+          <div className="pt-3 border-t border-gray-100">
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-2">
+                  📍 GPS 출근 인정 범위
+                </label>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  GPS 인정 범위
+                </label>
+                <select
+                  name="location_radius"
+                  value={formData.location_radius}
+                  onChange={handleChange}
+                  className="input"
+                >
+                  <option value={50}>50m (매우 좁음)</option>
+                  <option value={100}>100m (기본)</option>
+                  <option value={200}>200m (넓음)</option>
+                  <option value={500}>500m (매우 넓음)</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  행사장에서 이 범위 내에 있어야 출근 인정됩니다
+                </p>
+              </div>
+            </div>
           </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">근무 시작일 *</label>
+              <input
+                type="date"
+                name="event_date"
+                value={formData.event_date}
+                onChange={handleChange}
+                required
+                className="input"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">근무 종료일 *</label>
+              <input
+                type="date"
+                name="end_date"
+                value={formData.end_date}
+                onChange={handleChange}
+                min={formData.event_date}
+                required
+                className="input"
+              />
+            </div>
+          </div>
+          <p className="text-xs text-gray-500 -mt-2">
+            하루짜리 행사는 시작일과 종료일을 같은 날짜로 설정하세요
+          </p>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -302,12 +357,17 @@ export default function EventForm() {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">급여 (원)</label>
               <input
-                type="number"
+                type="text"
                 name="pay_amount"
-                value={formData.pay_amount}
-                onChange={handleChange}
-                min={0}
-                step={1000}
+                value={formData.pay_amount ? formData.pay_amount.toLocaleString('ko-KR') : ''}
+                onChange={(e) => {
+                  const value = e.target.value.replace(/[^0-9]/g, '');
+                  setFormData({
+                    ...formData,
+                    pay_amount: value ? parseInt(value) : 0
+                  });
+                }}
+                placeholder="예: 130,000"
                 className="input"
               />
             </div>

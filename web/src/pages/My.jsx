@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { workersAPI, authAPI, bigdataAPI, creditsAPI, badgesAPI } from '../api/client';
+import { workersAPI, authAPI, creditsAPI, badgesAPI } from '../api/client';
+import LocationPicker from '../components/LocationPicker';
 
 export default function My() {
   const { user, worker, logout, updateWorker } = useAuth();
@@ -19,10 +20,6 @@ export default function My() {
   // 데이터
   const [balance, setBalance] = useState(0);
   const [badgeCount, setBadgeCount] = useState(0);
-  const [regions, setRegions] = useState([]);
-  const [sidoList, setSidoList] = useState([]);
-  const [sigunguList, setSigunguList] = useState([]);
-  const [selectedSido, setSelectedSido] = useState('');
 
   // 폼 데이터
   const [formData, setFormData] = useState({
@@ -30,7 +27,8 @@ export default function My() {
     phone: '',
     birth_date: '',
     residence: '',
-    region_id: '',
+    residence_lat: null,
+    residence_lng: null,
     bank_name: '',
     bank_account: '',
     driver_license: false,
@@ -54,33 +52,20 @@ export default function My() {
 
   const loadData = async () => {
     try {
-      const [regionsRes] = await Promise.all([
-        bigdataAPI.getRegions().catch(() => ({ data: { regions: [] } })),
-      ]);
-
-      const regionsData = regionsRes.data.regions || [];
-      setRegions(regionsData);
-      setSidoList([...new Set(regionsData.map(r => r.sido))]);
-
       if (worker) {
         setFormData({
           name: worker.name || '',
           phone: worker.phone || '',
           birth_date: worker.birth_date || '',
           residence: worker.residence || '',
-          region_id: worker.region_id ? String(worker.region_id) : '',
+          residence_lat: worker.residence_lat || null,
+          residence_lng: worker.residence_lng || null,
           bank_name: worker.bank_name || '',
           bank_account: worker.bank_account || '',
           driver_license: worker.driver_license || false,
           security_cert: worker.security_cert || false,
           contract_signed: worker.contract_signed || false,
         });
-
-        // region_id로 sido 설정
-        if (worker.region_id && regionsData.length > 0) {
-          const region = regionsData.find(r => r.id === parseInt(worker.region_id));
-          if (region) setSelectedSido(region.sido);
-        }
 
         // WPT 잔액 및 배지 수 로드
         const [balanceRes, badgeRes] = await Promise.all([
@@ -97,15 +82,15 @@ export default function My() {
     }
   };
 
-  // 시도 선택 시 시군구 필터링
-  useEffect(() => {
-    if (selectedSido) {
-      const filtered = regions.filter(r => r.sido === selectedSido);
-      setSigunguList(filtered);
-    } else {
-      setSigunguList([]);
-    }
-  }, [selectedSido, regions]);
+  // 거주지 선택 핸들러
+  const handleResidenceSelect = (address, latitude, longitude) => {
+    setFormData({
+      ...formData,
+      residence: address,
+      residence_lat: latitude,
+      residence_lng: longitude,
+    });
+  };
 
   // 이미지 압축
   const compressImage = (file, maxWidth = 800, quality = 0.7) => {
@@ -171,7 +156,7 @@ export default function My() {
 
   const handleSave = async () => {
     if (!formData.name?.trim() || !formData.phone?.trim() || !formData.birth_date ||
-        !formData.region_id || !formData.bank_name?.trim() || !formData.bank_account?.trim()) {
+        !formData.residence?.trim() || !formData.bank_name?.trim() || !formData.bank_account?.trim()) {
       alert('모든 정보를 다 입력해주세요!');
       return;
     }
@@ -186,12 +171,18 @@ export default function My() {
 
     setSaving(true);
     try {
-      let saveData = { ...formData };
-      if (formData.region_id) {
-        const region = regions.find(r => r.id === parseInt(formData.region_id));
-        if (region) saveData.residence = `${region.sido} ${region.sigungu}`;
-        saveData.region_id = parseInt(formData.region_id);
-      }
+      const saveData = {
+        name: formData.name,
+        phone: formData.phone,
+        birth_date: formData.birth_date,
+        residence: formData.residence,
+        residence_lat: formData.residence_lat,
+        residence_lng: formData.residence_lng,
+        bank_name: formData.bank_name,
+        bank_account: formData.bank_account,
+        driver_license: formData.driver_license,
+        security_cert: formData.security_cert,
+      };
 
       const { data } = await workersAPI.updateMe(saveData);
       updateWorker(data);
@@ -436,34 +427,10 @@ export default function My() {
 
             <div>
               <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-sub)' }}>거주지역 <span style={{ color: 'var(--color-error)' }}>*</span></label>
-              <div className="grid grid-cols-2 gap-2">
-                <select
-                  value={selectedSido}
-                  onChange={(e) => {
-                    setSelectedSido(e.target.value);
-                    setFormData({ ...formData, region_id: '' });
-                  }}
-                  className="w-full px-3 py-2.5 rounded-xl text-sm"
-                  style={{ backgroundColor: 'var(--color-bg)', border: 'none', color: 'var(--color-text-title)' }}
-                >
-                  <option value="">시/도</option>
-                  {sidoList.map((sido) => (
-                    <option key={sido} value={sido}>{sido}</option>
-                  ))}
-                </select>
-                <select
-                  value={formData.region_id}
-                  onChange={(e) => setFormData({ ...formData, region_id: e.target.value })}
-                  disabled={!selectedSido}
-                  className="w-full px-3 py-2.5 rounded-xl text-sm disabled:opacity-50"
-                  style={{ backgroundColor: 'var(--color-bg)', border: 'none', color: 'var(--color-text-title)' }}
-                >
-                  <option value="">시/군/구</option>
-                  {sigunguList.map((region) => (
-                    <option key={region.id} value={String(region.id)}>{region.sigungu}</option>
-                  ))}
-                </select>
-              </div>
+              <LocationPicker
+                address={formData.residence}
+                onLocationSelect={handleResidenceSelect}
+              />
             </div>
 
             <div>

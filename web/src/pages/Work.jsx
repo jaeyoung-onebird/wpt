@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { applicationsAPI, attendanceAPI, chainAPI } from '../api/client';
-import { formatPay, formatDateShort, calculateNetPay, formatTime, calculateWorkHours } from '../utils/format';
+import { formatPay, formatDateShort, calculateNetPay, formatTime, calculateWorkHours, safeNumber } from '../utils/format';
+import GPSCheckIn from '../components/GPSCheckIn';
 
 export default function Work() {
   const { user, worker } = useAuth();
@@ -16,6 +17,7 @@ export default function Work() {
   const [submitting, setSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(null);
   const [lastAction, setLastAction] = useState(null);
+  const [checkInMethod, setCheckInMethod] = useState('gps'); // 'code' or 'gps'
 
   // 지원 관련
   const [applications, setApplications] = useState([]);
@@ -24,6 +26,8 @@ export default function Work() {
 
   // 근무내역 관련
   const [workHistory, setWorkHistory] = useState([]);
+  const [selectedRecord, setSelectedRecord] = useState(null);
+  const [downloading, setDownloading] = useState(null);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -39,14 +43,17 @@ export default function Work() {
 
   const loadData = async () => {
     try {
-      const [attRes, appRes, historyRes] = await Promise.all([
+      const [attRes, appRes] = await Promise.all([
         attendanceAPI.getMyList().catch(() => ({ data: { attendance: [] } })),
         applicationsAPI.getMyList().catch(() => ({ data: { applications: [] } })),
-        chainAPI.getMyLogs().catch(() => ({ data: { logs: [] } })),
       ]);
       setAttendanceList(attRes.data.attendance || []);
       setApplications(appRes.data.applications || []);
-      setWorkHistory(historyRes.data.logs || []);
+      // 근무내역은 업무 종료된 기록만 필터링
+      const completedRecords = (attRes.data.attendance || []).filter(
+        (a) => a.check_out_time
+      );
+      setWorkHistory(completedRecords);
     } catch (error) {
       console.error('Failed to load data:', error);
     } finally {
@@ -58,7 +65,7 @@ export default function Work() {
   const handleCheckIn = async (e) => {
     e.preventDefault();
     if (!checkInCode.trim()) {
-      alert('출근 코드를 입력하세요');
+      alert('업무 시작 코드를 입력하세요');
       return;
     }
 
@@ -75,7 +82,7 @@ export default function Work() {
       loadData();
       setTimeout(() => setShowSuccess(null), 3000);
     } catch (error) {
-      alert(error.response?.data?.detail || '출근 처리에 실패했습니다');
+      alert(error.response?.data?.detail || '업무 시작 처리에 실패했습니다');
     } finally {
       setSubmitting(false);
     }
@@ -97,10 +104,80 @@ export default function Work() {
       loadData();
       setTimeout(() => setShowSuccess(null), 5000);
     } catch (error) {
-      alert(error.response?.data?.detail || '퇴근 처리에 실패했습니다');
+      alert(error.response?.data?.detail || '업무 종료 처리에 실패했습니다');
     } finally {
       setSubmitting(false);
     }
+  };
+
+  // === 근무내역 관련 함수들 ===
+  // 급여 계산 (프리랜서 3.3% 공제)
+  const calculatePayment = (grossPay) => {
+    const amount = safeNumber(grossPay, 0);
+    const incomeTax = Math.floor(amount * 0.03); // 소득세 3%
+    const localTax = Math.floor(amount * 0.003); // 지방소득세 0.3%
+    const totalDeduction = incomeTax + localTax;
+    const netPay = amount - totalDeduction;
+    return { incomeTax, localTax, totalDeduction, netPay, grossPay: amount };
+  };
+
+  const formatFullDate = (dateStr) => {
+    if (!dateStr) return '-';
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+      return `${parts[1]}월 ${parts[2]}일`;
+    }
+    return dateStr;
+  };
+
+  const formatDateTime = (dateTimeStr) => {
+    if (!dateTimeStr) return '-';
+    return dateTimeStr.split('.')[0]; // 밀리초 제거
+  };
+
+  const handleDownloadPDF = async (record) => {
+    setDownloading(record.id);
+    try {
+      const response = await attendanceAPI.downloadPaymentStatement(record.id);
+      const blob = new Blob([response.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `지급명세서_${record.event_title}_${record.event_date}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Download error:', error);
+      alert(error.response?.data?.detail || '다운로드에 실패했습니다');
+    } finally {
+      setDownloading(null);
+    }
+  };
+
+  // 월별 그룹화 및 합계 계산
+  const groupByMonth = (records) => {
+    const groups = {};
+    records.forEach((record) => {
+      if (!record.event_date) return;
+      const month = record.event_date.substring(0, 7); // YYYY-MM
+      if (!groups[month]) {
+        groups[month] = { records: [], grossTotal: 0, netTotal: 0 };
+      }
+      groups[month].records.push(record);
+      const grossPay = record.pay_amount || 0;
+      const { netPay } = calculatePayment(grossPay);
+      groups[month].grossTotal += grossPay;
+      groups[month].netTotal += netPay;
+    });
+    // 최신 월 순으로 정렬
+    return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]));
+  };
+
+  const formatMonth = (monthStr) => {
+    const [year, month] = monthStr.split('-');
+    return `${year}년 ${parseInt(month)}월`;
   };
 
   // === 지원 관련 함수들 ===
@@ -170,7 +247,7 @@ export default function Work() {
             🔒
           </div>
           <p className="font-semibold mb-1" style={{ color: 'var(--color-text-title)' }}>로그인이 필요합니다</p>
-          <p className="text-sm mb-4" style={{ color: 'var(--color-text-sub)' }}>근무 현황을 확인하려면 로그인해주세요</p>
+          <p className="text-sm mb-4" style={{ color: 'var(--color-text-sub)' }}>업무 정보를 확인하려면 로그인해주세요</p>
           <button
             onClick={() => navigate('/login')}
             className="px-6 py-2.5 rounded-xl text-sm font-semibold text-white transition-all active:scale-[0.98]"
@@ -223,10 +300,10 @@ export default function Work() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
               </svg>
             </div>
-            <h2 className="text-xl font-bold mb-1" style={{ color: 'var(--color-text-title)' }}>출근 완료!</h2>
+            <h2 className="text-xl font-bold mb-1" style={{ color: 'var(--color-text-title)' }}>업무 시작 완료!</h2>
             <p className="text-sm mb-4" style={{ color: 'var(--color-text-secondary)' }}>
               <span className="font-medium">{lastAction.eventTitle}</span>에<br />
-              {lastAction.time}에 출근했습니다
+              {lastAction.time}에 업무를 시작했습니다
             </p>
             <button
               onClick={() => setShowSuccess(null)}
@@ -249,7 +326,7 @@ export default function Work() {
               </svg>
             </div>
             <h2 className="text-xl font-bold mb-1" style={{ color: 'var(--color-text-title)' }}>수고하셨습니다!</h2>
-            <p className="text-sm mb-4" style={{ color: 'var(--color-text-secondary)' }}>{lastAction.eventTitle} 퇴근 완료</p>
+            <p className="text-sm mb-4" style={{ color: 'var(--color-text-secondary)' }}>{lastAction.eventTitle} 업무 종료</p>
             <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: 'var(--color-bg)' }}>
               <p className="text-xs mb-1" style={{ color: 'var(--color-text-sub)' }}>오늘 근무</p>
               <p className="text-lg font-bold mb-2" style={{ color: 'var(--color-text-title)' }}>
@@ -300,7 +377,7 @@ export default function Work() {
             disabled={submitting}
             className="w-full py-3 bg-white text-green-600 rounded-xl font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
           >
-            {submitting ? '처리중...' : '퇴근하기'}
+            {submitting ? '처리중...' : '업무 종료'}
           </button>
         </div>
       )}
@@ -316,7 +393,7 @@ export default function Work() {
             boxShadow: activeTab === 'attendance' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
           }}
         >
-          출퇴근
+          업무
         </button>
         <button
           onClick={() => setActiveTab('applications')}
@@ -345,77 +422,107 @@ export default function Work() {
       {/* 출퇴근 탭 */}
       {activeTab === 'attendance' && (
         <div className="space-y-4">
-          {/* 출근 코드 입력 */}
+          {/* 업무 시작 */}
           {!activeWork && (
-            <form onSubmit={handleCheckIn} className="card">
-              <div className="text-center mb-4">
-                <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-2" style={{ backgroundColor: 'var(--color-primary-light)' }}>
-                  <svg className="w-6 h-6" fill="none" stroke="var(--color-primary)" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                  </svg>
-                </div>
-                <p className="text-sm font-medium" style={{ color: 'var(--color-text-title)' }}>출근 코드 입력</p>
-                <p className="text-xs mt-1" style={{ color: 'var(--color-text-sub)' }}>담당자에게 받은 코드를 입력하세요</p>
+            <>
+              {/* 방식 선택 토글 */}
+              <div className="flex gap-2 p-1 rounded-xl" style={{ backgroundColor: 'var(--color-bg)' }}>
+                <button
+                  onClick={() => setCheckInMethod('gps')}
+                  className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-all`}
+                  style={{
+                    backgroundColor: checkInMethod === 'gps' ? 'white' : 'transparent',
+                    color: checkInMethod === 'gps' ? 'var(--color-text-title)' : 'var(--color-text-sub)',
+                    boxShadow: checkInMethod === 'gps' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                  }}
+                >
+                  📍 GPS 출근
+                </button>
+                <button
+                  onClick={() => setCheckInMethod('code')}
+                  className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-all`}
+                  style={{
+                    backgroundColor: checkInMethod === 'code' ? 'white' : 'transparent',
+                    color: checkInMethod === 'code' ? 'var(--color-text-title)' : 'var(--color-text-sub)',
+                    boxShadow: checkInMethod === 'code' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                  }}
+                >
+                  🔑 코드 입력
+                </button>
               </div>
-              <input
-                type="text"
-                value={checkInCode}
-                onChange={(e) => setCheckInCode(e.target.value.toUpperCase())}
-                placeholder="예: ABC123"
-                className="w-full px-4 py-3 rounded-xl text-center text-xl tracking-[0.3em] uppercase font-bold mb-4"
-                style={{ backgroundColor: 'var(--color-bg)', border: 'none', color: 'var(--color-text-title)' }}
-                maxLength={10}
-              />
-              <button
-                type="submit"
-                disabled={!checkInCode.trim() || submitting}
-                className="w-full py-3 rounded-xl text-sm font-semibold text-white transition-all active:scale-[0.98] disabled:opacity-50"
-                style={{ backgroundColor: 'var(--color-primary)' }}
-              >
-                {submitting ? '출근 처리중...' : '출근하기'}
-              </button>
-            </form>
-          )}
 
-          {/* 출퇴근 기록 */}
-          <div>
-            <p className="text-sm font-medium mb-2" style={{ color: 'var(--color-text-secondary)' }}>출퇴근 기록</p>
-            {attendanceList.length > 0 ? (
-              <div className="space-y-2">
-                {attendanceList.map((record) => (
-                  <div key={record.id} className="card">
-                    <div className="flex justify-between items-start gap-2 mb-2">
-                      <div>
-                        <h3 className="font-semibold text-sm" style={{ color: 'var(--color-text-title)' }}>{record.event_title || '행사'}</h3>
-                        <p className="text-xs" style={{ color: 'var(--color-text-sub)' }}>{formatDate(record.event_date)}</p>
+              {/* GPS 방식 */}
+              {checkInMethod === 'gps' && applications.length > 0 && (
+                <div className="space-y-3">
+                  {applications
+                    .filter(app => app.status === 'CONFIRMED')
+                    .map(app => (
+                      <div key={app.id}>
+                        <div className="card mb-2" style={{ borderLeft: '4px solid var(--color-primary)' }}>
+                          <div className="flex justify-between items-start mb-2">
+                            <div>
+                              <h3 className="font-semibold text-sm" style={{ color: 'var(--color-text-title)' }}>
+                                {app.event_title}
+                              </h3>
+                              <p className="text-xs" style={{ color: 'var(--color-text-sub)' }}>
+                                {formatDateShort(app.event_date)}
+                              </p>
+                            </div>
+                            <span className="px-2 py-0.5 rounded text-xs font-medium" style={{ backgroundColor: '#DBEAFE', color: '#1E40AF' }}>
+                              확정됨
+                            </span>
+                          </div>
+                        </div>
+                        <GPSCheckIn
+                          eventId={app.event_id}
+                          eventTitle={app.event_title}
+                          onSuccess={loadData}
+                        />
                       </div>
-                      {getAttendanceChip(record)}
+                    ))}
+                  {applications.filter(app => app.status === 'CONFIRMED').length === 0 && (
+                    <div className="card text-center py-6">
+                      <p className="text-sm" style={{ color: 'var(--color-text-sub)' }}>
+                        확정된 행사가 없습니다
+                      </p>
                     </div>
-                    <div className="flex items-center gap-3 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-                      <span>출근 {formatTime(record.check_in_time)}</span>
-                      <span>퇴근 {formatTime(record.check_out_time)}</span>
-                      {record.worked_minutes && <span>근무 {formatWorkedTime(record.worked_minutes)}</span>}
+                  )}
+                </div>
+              )}
+
+              {/* 코드 입력 방식 */}
+              {checkInMethod === 'code' && (
+                <form onSubmit={handleCheckIn} className="card">
+                  <div className="text-center mb-4">
+                    <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-2" style={{ backgroundColor: 'var(--color-primary-light)' }}>
+                      <svg className="w-6 h-6" fill="none" stroke="var(--color-primary)" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                      </svg>
                     </div>
-                    {record.check_in_time && !record.check_out_time && (
-                      <button
-                        onClick={() => handleCheckOut(record.id, record.event_title)}
-                        disabled={submitting}
-                        className="mt-3 w-full py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-[0.98]"
-                        style={{ backgroundColor: '#D1FAE5', color: '#059669' }}
-                      >
-                        퇴근하기
-                      </button>
-                    )}
+                    <p className="text-sm font-medium" style={{ color: 'var(--color-text-title)' }}>업무 시작 코드 입력</p>
+                    <p className="text-xs mt-1" style={{ color: 'var(--color-text-sub)' }}>담당자에게 받은 코드를 입력하세요</p>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="card text-center py-8">
-                <div className="w-12 h-12 mx-auto mb-2 rounded-full flex items-center justify-center text-xl" style={{ backgroundColor: 'var(--color-bg)' }}>⏰</div>
-                <p className="text-sm" style={{ color: 'var(--color-text-disabled)' }}>출퇴근 기록이 없습니다</p>
-              </div>
-            )}
-          </div>
+                  <input
+                    type="text"
+                    value={checkInCode}
+                    onChange={(e) => setCheckInCode(e.target.value.toUpperCase())}
+                    placeholder="예: ABC123"
+                    className="w-full px-4 py-3 rounded-xl text-center text-xl tracking-[0.3em] uppercase font-bold mb-4"
+                    style={{ backgroundColor: 'var(--color-bg)', border: 'none', color: 'var(--color-text-title)' }}
+                    maxLength={10}
+                  />
+                  <button
+                    type="submit"
+                    disabled={!checkInCode.trim() || submitting}
+                    className="w-full py-3 rounded-xl text-sm font-semibold text-white transition-all active:scale-[0.98] disabled:opacity-50"
+                    style={{ backgroundColor: 'var(--color-primary)' }}
+                  >
+                    {submitting ? '출근 처리중...' : '업무 시작'}
+                  </button>
+                </form>
+              )}
+            </>
+          )}
         </div>
       )}
 
@@ -458,7 +565,7 @@ export default function Work() {
                           <span className="text-xs" style={{ color: 'var(--color-text-sub)' }}>실수령</span>
                         </div>
                       ) : (
-                        <span className="text-lg font-bold" style={{ color: 'var(--color-text-title)' }}>-</span>
+                        <span className="text-sm" style={{ color: 'var(--color-text-disabled)' }}>급여 미정</span>
                       )}
                       {getStatusChip(app.status)}
                     </div>
@@ -509,36 +616,177 @@ export default function Work() {
       {activeTab === 'history' && (
         <div className="space-y-4">
           {workHistory.length > 0 ? (
-            <div className="space-y-2">
-              {workHistory.map((log) => (
-                <div key={log.id} className="card">
-                  <div className="flex justify-between items-start mb-2">
-                    <div>
-                      <h3 className="font-semibold text-sm" style={{ color: 'var(--color-text-title)' }}>{log.event_title || '행사'}</h3>
-                      <p className="text-xs" style={{ color: 'var(--color-text-sub)' }}>{log.event_date}</p>
+            <div className="space-y-4">
+              {groupByMonth(workHistory).map(([month, data]) => (
+                <div key={month}>
+                  {/* 월별 헤더 및 합계 */}
+                  <div className="mb-2">
+                    <div className="card" style={{ background: 'linear-gradient(135deg, #334155 0%, #1e293b 100%)' }}>
+                      <div className="flex items-center justify-between mb-4">
+                        <div>
+                          <p className="text-white/80 text-sm mb-1">{formatMonth(month)}</p>
+                          <p className="text-white text-base font-semibold">{data.records.length}건 완료</p>
+                        </div>
+                        <div className="w-14 h-14 rounded-2xl bg-white/10 flex items-center justify-center text-2xl">
+                          📊
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="bg-white/10 rounded-lg p-2.5">
+                          <p className="text-white/60 text-xs mb-0.5">세전 총액</p>
+                          <p className="text-white text-sm font-semibold">{data.grossTotal.toLocaleString()}원</p>
+                        </div>
+                        <div className="bg-white/10 rounded-lg p-2.5">
+                          <p className="text-white/60 text-xs mb-0.5">세후 총액</p>
+                          <p className="text-white text-sm font-semibold">{data.netTotal.toLocaleString()}원</p>
+                        </div>
+                      </div>
                     </div>
-                    <span className="px-2 py-0.5 rounded text-[10px] font-medium" style={{ backgroundColor: 'var(--color-secondary-light)', color: 'var(--color-secondary)' }}>
-                      블록체인 기록됨
-                    </span>
                   </div>
-                  <div className="flex items-center gap-3 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-                    <span>근무 {formatWorkedTime(log.worked_minutes)}</span>
-                    {log.pay_amount && <span>급여 {formatPay(log.pay_amount)}</span>}
+
+                  {/* 해당 월 기록들 */}
+                  <div className="space-y-2">
+                    {data.records.map((record) => (
+                      <div key={record.id} className="card">
+                        <div className="flex justify-between items-start gap-2 mb-2">
+                          <div
+                            className="flex-1 cursor-pointer"
+                            onClick={() => setSelectedRecord(record)}
+                          >
+                            <h3 className="font-semibold text-base hover:text-blue-600 transition-colors">{record.event_title || '행사'}</h3>
+                            <p className="text-xs text-gray-500">{formatFullDate(record.event_date)}</p>
+                          </div>
+                          <span className="px-2 py-0.5 rounded text-[10px] font-medium" style={{ backgroundColor: '#E2E8F0', color: '#475569' }}>업무 종료</span>
+                        </div>
+
+                        {/* 급여 정보 미리보기 */}
+                        {record.pay_amount && (
+                          <div className="flex items-center justify-between text-sm bg-gray-50 rounded-lg px-3 py-2 mb-2">
+                            <span className="text-gray-500">실지급액</span>
+                            <span className="font-bold" style={{ color: 'var(--color-primary)' }}>
+                              {calculatePayment(record.pay_amount).netPay.toLocaleString()}원
+                            </span>
+                          </div>
+                        )}
+
+                        {/* 다운로드 버튼 */}
+                        <button
+                          onClick={() => handleDownloadPDF(record)}
+                          disabled={downloading === record.id}
+                          className="w-full py-2 px-4 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all mt-2 shadow-sm hover:shadow-md"
+                        >
+                          {downloading === record.id ? '다운로드 중...' : '💰 지급명세서 다운로드'}
+                        </button>
+                      </div>
+                    ))}
                   </div>
-                  {log.tx_hash && (
-                    <p className="text-[10px] mt-2 font-mono truncate" style={{ color: 'var(--color-text-disabled)' }}>
-                      TX: {log.tx_hash}
-                    </p>
-                  )}
                 </div>
               ))}
             </div>
           ) : (
             <div className="card text-center py-8">
               <div className="w-12 h-12 mx-auto mb-2 rounded-full flex items-center justify-center text-xl" style={{ backgroundColor: 'var(--color-bg)' }}>📊</div>
-              <p className="text-sm" style={{ color: 'var(--color-text-disabled)' }}>블록체인에 기록된 근무내역이 없습니다</p>
+              <p className="text-sm mb-2" style={{ color: 'var(--color-text-disabled)' }}>근무 내역이 없습니다</p>
+              <p className="text-xs" style={{ color: 'var(--color-text-disabled)' }}>업무를 완료하면 여기서 확인할 수 있어요</p>
             </div>
           )}
+        </div>
+      )}
+
+      {/* 행사 상세정보 모달 */}
+      {selectedRecord && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setSelectedRecord(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-sm max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            {/* 헤더 */}
+            <div className="bg-gradient-to-r from-slate-700 to-slate-800 px-5 py-4 text-white sticky top-0">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">📋</span>
+                  <span className="font-semibold">근무 상세정보</span>
+                </div>
+                <button onClick={() => setSelectedRecord(null)} className="text-white text-2xl leading-none">&times;</button>
+              </div>
+            </div>
+
+            {/* 내용 */}
+            <div className="p-5 space-y-4">
+              {/* 행사 정보 */}
+              <div>
+                <h3 className="text-xl font-bold text-gray-900 mb-1">{selectedRecord.event_title}</h3>
+                <p className="text-sm text-gray-500">{formatFullDate(selectedRecord.event_date)}</p>
+              </div>
+
+              {/* 근무 시간 */}
+              <div className="border-t border-gray-100 pt-4">
+                <p className="text-sm font-semibold text-gray-700 mb-3">⏰ 근무 시간</p>
+                <div className="space-y-2">
+                  <div className="flex justify-between py-1">
+                    <span className="text-gray-500 text-sm">업무시작</span>
+                    <span className="font-medium">{formatDateTime(selectedRecord.check_in_time)}</span>
+                  </div>
+                  <div className="flex justify-between py-1">
+                    <span className="text-gray-500 text-sm">업무종료</span>
+                    <span className="font-medium">{formatDateTime(selectedRecord.check_out_time)}</span>
+                  </div>
+                  <div className="flex justify-between py-1">
+                    <span className="text-gray-500 text-sm">상태</span>
+                    <span className="font-medium text-green-600">업무 종료</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 급여 정보 */}
+              {selectedRecord.pay_amount && (() => {
+                const payment = calculatePayment(selectedRecord.pay_amount);
+                return (
+                  <div className="border-t border-gray-100 pt-4">
+                    <p className="text-sm font-semibold text-gray-700 mb-3">💰 급여 정보</p>
+                    <div className="space-y-2">
+                      <div className="flex justify-between py-1">
+                        <span className="text-gray-500 text-sm">세전 금액</span>
+                        <span className="font-medium">{selectedRecord.pay_amount.toLocaleString()}원</span>
+                      </div>
+                      <div className="flex justify-between py-2 bg-slate-100 rounded-lg px-3 mt-2">
+                        <span className="font-semibold">실지급액</span>
+                        <span className="font-bold text-lg text-slate-700">
+                          {payment.netPay.toLocaleString()}원
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* 블록체인 증명 */}
+              {selectedRecord.tx_hash && (
+                <div className="border-t border-gray-100 pt-4">
+                  <p className="text-sm font-semibold text-gray-700 mb-3">⛓️ 블록체인 증명</p>
+                  <div className="bg-green-50 rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                      <span className="text-sm text-green-700 font-medium">블록체인에 영구 기록됨</span>
+                    </div>
+                    <button
+                      onClick={() => window.open(`https://amoy.polygonscan.com/tx/${selectedRecord.tx_hash}`, '_blank')}
+                      className="w-full py-2 text-xs bg-white text-green-700 border border-green-200 rounded-lg font-medium hover:bg-green-50 transition-colors"
+                    >
+                      Polygonscan에서 확인 →
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* 버튼 */}
+              <div className="pt-4">
+                <button
+                  onClick={() => setSelectedRecord(null)}
+                  className="w-full py-3 px-4 bg-gray-100 text-gray-700 rounded-xl text-sm font-semibold hover:bg-gray-200 transition-all"
+                >
+                  닫기
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

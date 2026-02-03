@@ -100,6 +100,7 @@ export default function WorkHistory() {
     }
   };
 
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -216,31 +217,37 @@ export default function WorkHistory() {
                   {data.records.map((record) => (
                     <div
                       key={record.id}
-                      className="card card-hover cursor-pointer"
-                      onClick={() => setSelectedRecord(record)}
+                      className="card"
                     >
                       <div className="flex justify-between items-start gap-2 mb-2">
-                        <div>
-                          <h3 className="font-semibold text-base">{record.event_title || '행사'}</h3>
+                        <div
+                          className="flex-1 cursor-pointer"
+                          onClick={() => setSelectedRecord(record)}
+                        >
+                          <h3 className="font-semibold text-base hover:text-blue-600 transition-colors">{record.event_title || '행사'}</h3>
                           <p className="text-xs text-gray-500">{formatDate(record.event_date)}</p>
                         </div>
-                        <div className="flex items-center gap-1">
-                          {record.tx_hash && (
-                            <span className="px-2 py-0.5 text-xs font-medium bg-green-100 text-green-700 rounded-full">⛓️ 증명</span>
-                          )}
-                          <span className="chip-completed">{getStatusText(record)}</span>
-                        </div>
+                        <span className="chip-completed">{getStatusText(record)}</span>
                       </div>
 
                       {/* 급여 정보 미리보기 */}
                       {record.pay_amount && (
-                        <div className="flex items-center justify-between text-sm bg-gray-50 rounded-lg px-3 py-2">
+                        <div className="flex items-center justify-between text-sm bg-gray-50 rounded-lg px-3 py-2 mb-2">
                           <span className="text-gray-500">실지급액</span>
                           <span className="font-bold" style={{ color: 'var(--color-primary)' }}>
                             {calculatePayment(record.pay_amount).netPay.toLocaleString()}원
                           </span>
                         </div>
                       )}
+
+                      {/* 다운로드 버튼 */}
+                      <button
+                        onClick={() => handleDownloadPDF(record)}
+                        disabled={downloading}
+                        className="w-full py-3 px-4 bg-amber-500 text-white rounded-xl text-sm font-semibold hover:bg-amber-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all mt-2 shadow-sm hover:shadow-md"
+                      >
+                        {downloading ? '다운로드 중...' : '💰 급여명세서 다운로드'}
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -264,112 +271,33 @@ export default function WorkHistory() {
         )}
       </div>
 
-      {/* 지급명세서 모달 */}
+      {/* 행사 상세정보 모달 */}
       {selectedRecord && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-sm max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setSelectedRecord(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-sm max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             {/* 헤더 */}
-            <div className="bg-gradient-to-r from-amber-500 to-orange-500 px-5 py-4 text-white sticky top-0">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-lg">💰</span>
-                <span className="font-semibold">프리랜서 지급명세서</span>
+            <div className="bg-gradient-to-r from-blue-500 to-blue-600 px-5 py-4 text-white sticky top-0">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">📋</span>
+                  <span className="font-semibold">근무 상세정보</span>
+                </div>
+                <button onClick={() => setSelectedRecord(null)} className="text-white text-2xl leading-none">&times;</button>
               </div>
             </div>
 
             {/* 내용 */}
             <div className="p-5 space-y-4">
-              {/* 근무자 정보 */}
-              <div className="space-y-2">
-                <div className="flex justify-between py-1">
-                  <span className="text-gray-500 text-sm">이름</span>
-                  <span className="font-medium">{worker.name}</span>
-                </div>
-                <div className="flex justify-between py-1">
-                  <span className="text-gray-500 text-sm">생년월일</span>
-                  <span className="font-medium">{formatBirthDate(worker.birth_date)}</span>
-                </div>
-                <div className="flex justify-between py-1">
-                  <span className="text-gray-500 text-sm">연락처</span>
-                  <span className="font-medium">{worker.phone}</span>
-                </div>
+              {/* 행사 정보 */}
+              <div>
+                <h3 className="text-xl font-bold text-gray-900 mb-1">{selectedRecord.event_title}</h3>
+                <p className="text-sm text-gray-500">{formatDate(selectedRecord.event_date)}</p>
               </div>
 
-              {/* 회사 정보 */}
-              <div className="border-t border-gray-100 pt-4 space-y-2">
-                <div className="flex justify-between py-1">
-                  <span className="text-gray-500 text-sm">회사명</span>
-                  <span className="font-medium">{companyInfo.name}</span>
-                </div>
-                <div className="flex justify-between py-1">
-                  <span className="text-gray-500 text-sm">사업자등록번호</span>
-                  <span className="font-medium">{companyInfo.businessNumber}</span>
-                </div>
-                <div className="flex justify-between py-1">
-                  <span className="text-gray-500 text-sm">대표자명</span>
-                  <span className="font-medium">{companyInfo.ceoName}</span>
-                </div>
-              </div>
-
-              {/* 지급 정보 */}
+              {/* 근무 시간 */}
               <div className="border-t border-gray-100 pt-4">
-                <p className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                  <span>📋</span> 지급 정보
-                </p>
+                <p className="text-sm font-semibold text-gray-700 mb-3">⏰ 근무 시간</p>
                 <div className="space-y-2">
-                  <div className="flex justify-between py-1">
-                    <span className="text-gray-500 text-sm">지급일</span>
-                    <span className="font-medium">차주 수요일</span>
-                  </div>
-                  <div className="flex justify-between py-1">
-                    <span className="text-gray-500 text-sm">용역 제공 기간</span>
-                    <span className="font-medium">{selectedRecord.event_date} {selectedRecord.event_title}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* 지급 금액 */}
-              {selectedRecord.pay_amount && (() => {
-                const payment = calculatePayment(selectedRecord.pay_amount);
-                return (
-                  <div className="border-t border-gray-100 pt-4">
-                    <p className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                      <span>💵</span> 지급 금액
-                    </p>
-                    <div className="space-y-2">
-                      <div className="flex justify-between py-1">
-                        <span className="text-gray-500 text-sm">지급총액</span>
-                        <span className="font-medium">{selectedRecord.pay_amount.toLocaleString()}원</span>
-                      </div>
-                      <div className="flex justify-between py-1">
-                        <span className="text-gray-500 text-sm">소득세(3%)</span>
-                        <span className="font-medium text-red-500">-{payment.incomeTax.toLocaleString()}원</span>
-                      </div>
-                      <div className="flex justify-between py-1">
-                        <span className="text-gray-500 text-sm">지방소득세(0.3%)</span>
-                        <span className="font-medium text-red-500">-{payment.localTax.toLocaleString()}원</span>
-                      </div>
-                      <div className="flex justify-between py-1">
-                        <span className="text-gray-500 text-sm">공제합계</span>
-                        <span className="font-medium text-red-500">-{payment.totalDeduction.toLocaleString()}원</span>
-                      </div>
-                      <div className="flex justify-between py-2 bg-blue-50 rounded-lg px-3 mt-2">
-                        <span className="font-semibold">실지급액</span>
-                        <span className="font-bold text-lg" style={{ color: 'var(--color-primary)' }}>
-                          {payment.netPay.toLocaleString()}원
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* 근무 상태 */}
-              <div className="border-t border-gray-100 pt-4">
-                <div className="space-y-2">
-                  <div className="flex justify-between py-1">
-                    <span className="text-gray-500 text-sm">상태</span>
-                    <span className="font-medium text-green-600">🎉 {getStatusText(selectedRecord)}</span>
-                  </div>
                   <div className="flex justify-between py-1">
                     <span className="text-gray-500 text-sm">출근</span>
                     <span className="font-medium">{formatDateTime(selectedRecord.check_in_time)}</span>
@@ -378,30 +306,47 @@ export default function WorkHistory() {
                     <span className="text-gray-500 text-sm">퇴근</span>
                     <span className="font-medium">{formatDateTime(selectedRecord.check_out_time)}</span>
                   </div>
+                  <div className="flex justify-between py-1">
+                    <span className="text-gray-500 text-sm">상태</span>
+                    <span className="font-medium text-green-600">{getStatusText(selectedRecord)}</span>
+                  </div>
                 </div>
               </div>
+
+              {/* 급여 정보 */}
+              {selectedRecord.pay_amount && (() => {
+                const payment = calculatePayment(selectedRecord.pay_amount);
+                return (
+                  <div className="border-t border-gray-100 pt-4">
+                    <p className="text-sm font-semibold text-gray-700 mb-3">💰 급여 정보</p>
+                    <div className="space-y-2">
+                      <div className="flex justify-between py-1">
+                        <span className="text-gray-500 text-sm">세전 금액</span>
+                        <span className="font-medium">{selectedRecord.pay_amount.toLocaleString()}원</span>
+                      </div>
+                      <div className="flex justify-between py-2 bg-blue-50 rounded-lg px-3 mt-2">
+                        <span className="font-semibold">실지급액</span>
+                        <span className="font-bold text-lg text-blue-600">
+                          {payment.netPay.toLocaleString()}원
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* 블록체인 증명 */}
               {selectedRecord.tx_hash && (
                 <div className="border-t border-gray-100 pt-4">
-                  <p className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                    <span>⛓️</span> 블록체인 증명
-                  </p>
-                  <div className="bg-green-50 rounded-lg p-3 space-y-2">
-                    <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold text-gray-700 mb-3">⛓️ 블록체인 증명</p>
+                  <div className="bg-green-50 rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-2">
                       <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                      <span className="text-sm text-green-700 font-medium">블록체인에 기록됨</span>
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      <p>TX: {selectedRecord.tx_hash.slice(0, 16)}...{selectedRecord.tx_hash.slice(-8)}</p>
-                      {selectedRecord.block_number && <p>Block: {selectedRecord.block_number}</p>}
+                      <span className="text-sm text-green-700 font-medium">블록체인에 영구 기록됨</span>
                     </div>
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        window.open(`https://amoy.polygonscan.com/tx/${selectedRecord.tx_hash}`, '_blank');
-                      }}
-                      className="w-full py-2 text-xs bg-white text-green-700 border border-green-200 rounded-lg font-medium hover:bg-green-50"
+                      onClick={() => window.open(`https://amoy.polygonscan.com/tx/${selectedRecord.tx_hash}`, '_blank')}
+                      className="w-full py-2 text-xs bg-white text-green-700 border border-green-200 rounded-lg font-medium hover:bg-green-50 transition-colors"
                     >
                       Polygonscan에서 확인 →
                     </button>
@@ -410,17 +355,10 @@ export default function WorkHistory() {
               )}
 
               {/* 버튼 */}
-              <div className="space-y-2 pt-4">
-                <button
-                  onClick={() => handleDownloadPDF(selectedRecord)}
-                  disabled={downloading}
-                  className="w-full py-3 bg-amber-500 text-white rounded-xl font-medium hover:bg-amber-600 disabled:bg-gray-300"
-                >
-                  {downloading ? '다운로드 중...' : '📄 지급명세서 PDF 다운로드'}
-                </button>
+              <div className="pt-4">
                 <button
                   onClick={() => setSelectedRecord(null)}
-                  className="w-full py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200"
+                  className="w-full py-3 px-4 bg-gray-100 text-gray-700 rounded-xl text-sm font-semibold hover:bg-gray-200 transition-all"
                 >
                   닫기
                 </button>

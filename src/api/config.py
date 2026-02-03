@@ -48,7 +48,13 @@ class Settings(BaseSettings):
     EMAIL_VERIFICATION_EXPIRE_MINUTES: int = 3
 
     # CORS
-    CORS_ORIGINS: list[str] = ["*"]
+    CORS_ORIGINS: list[str] = [
+        "http://localhost:5173",
+        "http://localhost:3001",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:3001",
+        "*"  # 개발 환경용 - 프로덕션에서는 제거 필요
+    ]
 
     @property
     def db_full_path(self) -> str:

@@ -81,13 +81,13 @@ export default function AdminDashboard() {
           style={{ backgroundColor: 'var(--color-bg-card)' }}
           onClick={handlePendingClick}
         >
-          <p className="text-3xl font-bold" style={{ color: 'var(--color-primary)' }}>
+          <p className="text-2xl font-bold" style={{ color: 'var(--color-primary)' }}>
             {stats?.pending_applications || 0}
           </p>
           <p className="text-xs mt-1" style={{ color: 'var(--color-text-sub)' }}>대기중 지원</p>
         </div>
         <Link to="/admin/attendance" className="rounded-xl p-4 text-center hover:shadow-md transition-shadow" style={{ backgroundColor: 'var(--color-bg-card)' }}>
-          <p className="text-3xl font-bold" style={{ color: 'var(--color-success)' }}>
+          <p className="text-2xl font-bold" style={{ color: 'var(--color-success)' }}>
             {stats?.checked_in_now || 0}
           </p>
           <p className="text-xs mt-1" style={{ color: 'var(--color-text-sub)' }}>현재 출근</p>
@@ -126,28 +126,6 @@ export default function AdminDashboard() {
             <div className="flex-1">
               <p className="font-medium" style={{ color: 'var(--color-text-title)' }}>회원 관리</p>
               <p className="text-xs" style={{ color: 'var(--color-text-sub)' }}>등록 {stats?.total_workers || 0}명</p>
-            </div>
-            <span style={{ color: 'var(--color-text-sub)' }}>&rarr;</span>
-          </Link>
-
-          <Link to="/admin/attendance" className="flex items-center gap-3 py-3.5 px-4 border-b" style={{ borderColor: 'var(--color-border)' }}>
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg" style={{ backgroundColor: 'var(--color-bg)' }}>
-              <span>📊</span>
-            </div>
-            <div className="flex-1">
-              <p className="font-medium" style={{ color: 'var(--color-text-title)' }}>출석 관리</p>
-              <p className="text-xs" style={{ color: 'var(--color-text-sub)' }}>출퇴근 기록 조회</p>
-            </div>
-            <span style={{ color: 'var(--color-text-sub)' }}>&rarr;</span>
-          </Link>
-
-          <Link to="/blockchain" className="flex items-center gap-3 py-3.5 px-4 border-b" style={{ borderColor: 'var(--color-border)' }}>
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg" style={{ backgroundColor: 'var(--color-bg)' }}>
-              <span>⛓️</span>
-            </div>
-            <div className="flex-1">
-              <p className="font-medium" style={{ color: 'var(--color-text-title)' }}>블록체인</p>
-              <p className="text-xs" style={{ color: 'var(--color-text-sub)' }}>기록 조회 및 검증</p>
             </div>
             <span style={{ color: 'var(--color-text-sub)' }}>&rarr;</span>
           </Link>
@@ -263,7 +241,7 @@ export default function AdminDashboard() {
                 </div>
               ) : (
                 <div className="text-center py-8">
-                  <div className="text-3xl mb-2">✅</div>
+                  <div className="text-2xl mb-2">✅</div>
                   <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>대기중인 지원이 없습니다</p>
                 </div>
               )}
