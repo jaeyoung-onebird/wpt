@@ -3,6 +3,50 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { eventsAPI, applicationsAPI, attendanceAPI, workersAPI, badgesAPI } from '../api/client';
 
+// 오늘 날짜의 일정 가져오기
+const getTodaySchedule = (applications, events) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  return applications
+    .filter(app => app.status === 'approved')
+    .filter(app => {
+      const event = events.find(e => e.id === app.event_id);
+      if (!event) return false;
+
+      const startDate = new Date(event.start_date);
+      const endDate = new Date(event.end_date);
+      startDate.setHours(0, 0, 0, 0);
+      endDate.setHours(0, 0, 0, 0);
+
+      return today >= startDate && today <= endDate;
+    })
+    .map(app => events.find(e => e.id === app.event_id))
+    .filter(Boolean);
+};
+
+// 다가오는 일정 가져오기
+const getUpcomingSchedule = (applications, events, limit = 2) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  return applications
+    .filter(app => app.status === 'approved')
+    .map(app => ({
+      ...app,
+      event: events.find(e => e.id === app.event_id)
+    }))
+    .filter(item => {
+      if (!item.event) return false;
+      const startDate = new Date(item.event.start_date);
+      startDate.setHours(0, 0, 0, 0);
+      return startDate > today;
+    })
+    .sort((a, b) => new Date(a.event.start_date) - new Date(b.event.start_date))
+    .slice(0, limit)
+    .map(item => item.event);
+};
+
 export default function Home() {
   const { user, worker } = useAuth();
   const navigate = useNavigate();
@@ -253,6 +297,68 @@ export default function Home() {
             시작하기
           </button>
         </div>
+      )}
+
+      {/* 내 일정 위젯 (로그인한 워커만) */}
+      {worker && (
+        <Link to="/calendar" className="block">
+          <div className="card p-4 transition-all active:scale-[0.98]">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">📅</span>
+                <h3 className="font-bold" style={{ color: 'var(--color-text-title)' }}>내 일정</h3>
+              </div>
+              <span className="text-xs" style={{ color: 'var(--color-primary)' }}>전체보기 →</span>
+            </div>
+
+            {(() => {
+              const todaySchedule = getTodaySchedule(myApplications, events);
+              const upcomingSchedule = getUpcomingSchedule(myApplications, events, 2);
+
+              if (todaySchedule.length === 0 && upcomingSchedule.length === 0) {
+                return (
+                  <div className="text-center py-6">
+                    <p className="text-sm mb-2" style={{ color: 'var(--color-text-sub)' }}>예정된 일정이 없습니다</p>
+                    <p className="text-xs" style={{ color: 'var(--color-text-sub)' }}>아래에서 행사를 둘러보세요</p>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="space-y-2">
+                  {/* 오늘 일정 */}
+                  {todaySchedule.map(event => (
+                    <div key={event.id} className="p-3 rounded-xl bg-gradient-to-r from-orange-50 to-pink-50 border border-orange-200">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-orange-500 text-white">오늘</span>
+                        <span className="text-sm font-bold" style={{ color: 'var(--color-text-title)' }}>{event.title}</span>
+                      </div>
+                      <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                        📍 {event.location} • 🕒 {event.start_time || event.event_time}
+                      </p>
+                    </div>
+                  ))}
+
+                  {/* 다가오는 일정 */}
+                  {upcomingSchedule.map(event => {
+                    const daysUntil = Math.ceil((new Date(event.start_date) - new Date()) / (1000 * 60 * 60 * 24));
+                    return (
+                      <div key={event.id} className="p-3 rounded-xl" style={{ backgroundColor: 'var(--color-bg)' }}>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-sm font-semibold" style={{ color: 'var(--color-text-title)' }}>{event.title}</span>
+                          <span className="text-xs font-bold" style={{ color: 'var(--color-primary)' }}>D-{daysUntil}</span>
+                        </div>
+                        <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                          {formatDate(event.start_date)} • {event.work_type || event.category_name || '일반'}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
+        </Link>
       )}
 
       {/* 3. 추천 행사 - 프리미엄 카드 디자인 */}
