@@ -90,9 +90,11 @@ export const eventsAPI = {
 export const applicationsAPI = {
   create: (eventId) => api.post('/api/applications', { event_id: eventId }),
   getMyList: () => api.get('/api/applications/me'),
+  getMyApplications: () => api.get('/api/applications/me'),
   get: (id) => api.get(`/api/applications/${id}`),
   updateStatus: (id, status, reason) => api.patch(`/api/applications/${id}/status`, { status, rejection_reason: reason }),
   cancel: (id) => api.delete(`/api/applications/${id}`),
+  checkConflict: (eventId) => api.post('/api/applications/check-conflict', null, { params: { event_id: eventId } }),
 };
 
 // Attendance API

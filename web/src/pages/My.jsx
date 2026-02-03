@@ -365,7 +365,7 @@ export default function My() {
         </div>
 
         {/* WPT & 배지 요약 */}
-        <div className="flex gap-2">
+        <div className="flex gap-2 mb-3">
           <Link to="/wallet" className="flex-1 p-3 rounded-xl transition-all active:scale-[0.98]" style={{ backgroundColor: 'var(--color-bg)' }}>
             <p className="text-xs" style={{ color: 'var(--color-text-sub)' }}>보유 WPT</p>
             <p className="text-lg font-bold" style={{ color: 'var(--color-primary)' }}>{balance.toLocaleString()}</p>
@@ -375,6 +375,16 @@ export default function My() {
             <p className="text-lg font-bold" style={{ color: 'var(--color-secondary)' }}>{badgeCount}개</p>
           </Link>
         </div>
+
+        {/* 캘린더 바로가기 */}
+        <Link to="/calendar" className="block p-4 rounded-xl transition-all active:scale-[0.98] bg-gradient-to-br from-blue-500 to-purple-600 text-white">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-2xl">📅</span>
+            <span className="text-sm font-medium opacity-90">바로가기 →</span>
+          </div>
+          <p className="font-bold text-lg mb-1">내 일정</p>
+          <p className="text-xs opacity-90">이번 달 승인된 행사를 확인하세요</p>
+        </Link>
       </div>
 
       {/* 프로필 정보 */}

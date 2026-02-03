@@ -43,6 +43,25 @@ export default function EventDetail() {
 
     setApplying(true);
     try {
+      // 일정 충돌 체크
+      const { data: conflictData } = await applicationsAPI.checkConflict(parseInt(id));
+
+      if (conflictData.has_conflict) {
+        const conflicts = conflictData.conflicting_events;
+        const conflictMessage = conflicts.map(c =>
+          `• ${c.title} (${new Date(c.start_date).toLocaleDateString()} ~ ${new Date(c.end_date).toLocaleDateString()})`
+        ).join('\n');
+
+        const confirmed = confirm(
+          `⚠️ 일정이 겹치는 행사가 있습니다:\n\n${conflictMessage}\n\n그래도 지원하시겠습니까?`
+        );
+
+        if (!confirmed) {
+          setApplying(false);
+          return;
+        }
+      }
+
       await applicationsAPI.create(parseInt(id));
       alert('지원이 완료되었습니다!');
       loadEvent();

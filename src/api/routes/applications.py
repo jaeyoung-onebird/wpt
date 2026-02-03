@@ -181,3 +181,60 @@ async def cancel_application(
         conn.commit()
 
     return {"message": "지원이 취소되었습니다", "id": app_id}
+
+
+@router.post("/check-conflict")
+async def check_schedule_conflict(
+    event_id: int,
+    auth: dict = Depends(require_worker),
+    db: Database = Depends(get_db)
+):
+    """일정 충돌 체크"""
+    worker = auth["worker"]
+    worker_id = worker["id"]
+
+    # 지원하려는 행사 정보
+    target_event = db.get_event(event_id)
+    if not target_event:
+        raise HTTPException(status_code=404, detail="행사를 찾을 수 없습니다")
+
+    target_start = target_event.get("start_date")
+    target_end = target_event.get("end_date")
+
+    # 승인된 지원 중에서 날짜가 겹치는 것 찾기
+    with db.get_connection() as conn:
+        from psycopg2.extras import RealDictCursor
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        query = """
+            SELECT a.id, a.event_id, e.title, e.start_date, e.end_date, e.location
+            FROM applications a
+            JOIN events e ON a.event_id = e.id
+            WHERE a.worker_id = %s
+            AND a.status = 'APPROVED'
+            AND (
+                (e.start_date <= %s AND e.end_date >= %s) OR
+                (e.start_date <= %s AND e.end_date >= %s) OR
+                (e.start_date >= %s AND e.end_date <= %s)
+            )
+        """
+
+        cursor.execute(query, (
+            worker_id,
+            target_end, target_start,
+            target_end, target_end,
+            target_start, target_end
+        ))
+
+        conflicts = cursor.fetchall()
+
+    if conflicts:
+        return {
+            "has_conflict": True,
+            "conflicting_events": [dict(c) for c in conflicts]
+        }
+
+    return {
+        "has_conflict": False,
+        "conflicting_events": []
+    }

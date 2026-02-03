@@ -22,6 +22,7 @@ import Notifications from './pages/Notifications';
 import Work from './pages/Work';
 import Collection from './pages/Collection';
 import My from './pages/My';
+import CalendarPage from './pages/Calendar';
 
 // 관리자 페이지
 import AdminDashboard from './pages/admin/Dashboard';
@@ -163,6 +164,14 @@ function AppRoutes() {
           element={
             <PrivateRoute>
               <Work />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/calendar"
+          element={
+            <PrivateRoute>
+              <CalendarPage />
             </PrivateRoute>
           }
         />
