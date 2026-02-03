@@ -66,7 +66,9 @@ export default function EventDetail() {
       alert('지원이 완료되었습니다!');
       loadEvent();
     } catch (error) {
-      alert(error.response?.data?.detail || '지원에 실패했습니다');
+      console.error('Application error:', error);
+      const errorMessage = error.response?.data?.detail || error.message || '지원에 실패했습니다';
+      alert(errorMessage);
     } finally {
       setApplying(false);
     }

@@ -346,44 +346,44 @@ export default function CalendarPage() {
         </div>
       )}
 
-      {/* 월간 통계 */}
-      <div className="bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl p-4 mb-4 text-white shadow-lg">
-        <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+      {/* 월간 통계 - 지갑 스타일 */}
+      <div className="rounded-2xl p-4 mb-4 shadow-lg" style={{ backgroundColor: '#37474F' }}>
+        <h2 className="text-lg font-bold mb-4 flex items-center gap-2 text-white">
           📅 {new Date().getMonth() + 1}월 일정 요약
         </h2>
 
         <div className="grid grid-cols-3 gap-3 mb-4">
-          <div className="bg-white/20 backdrop-blur rounded-xl p-3 text-center">
-            <p className="text-2xl font-bold">{monthStats.eventCount}</p>
-            <p className="text-xs opacity-90">행사 수</p>
+          <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
+            <p className="text-2xl font-bold text-white">{monthStats.eventCount}</p>
+            <p className="text-xs text-gray-300">행사 수</p>
           </div>
-          <div className="bg-white/20 backdrop-blur rounded-xl p-3 text-center">
-            <p className="text-2xl font-bold">{monthStats.workDays}</p>
-            <p className="text-xs opacity-90">근무일</p>
+          <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
+            <p className="text-2xl font-bold text-white">{monthStats.workDays}</p>
+            <p className="text-xs text-gray-300">근무일</p>
           </div>
-          <div className="bg-white/20 backdrop-blur rounded-xl p-3 text-center">
-            <p className="text-2xl font-bold">
+          <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
+            <p className="text-2xl font-bold text-yellow-400">
               {(monthStats.totalPay / 10000).toFixed(0)}
             </p>
-            <p className="text-xs opacity-90">만원</p>
+            <p className="text-xs text-gray-300">만원</p>
           </div>
         </div>
 
         {/* 업체별 급여 분석 */}
         {Object.keys(monthStats.byClient).length > 0 && (
-          <div className="bg-white/10 backdrop-blur rounded-xl p-3">
-            <p className="text-xs opacity-90 mb-2">업체별 급여</p>
+          <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
+            <p className="text-xs text-gray-300 mb-2">업체별 급여</p>
             <div className="space-y-1.5">
               {Object.entries(monthStats.byClient).map(([client, amount]) => (
                 <div key={client} className="flex justify-between items-center">
-                  <span className="flex items-center gap-2 text-sm">
+                  <span className="flex items-center gap-2 text-sm text-gray-200">
                     <div
                       className="w-2 h-2 rounded-full"
                       style={{ backgroundColor: getEventColor({client_name: client}) }}
                     />
                     {client}
                   </span>
-                  <span className="font-semibold text-sm">
+                  <span className="font-semibold text-sm text-white">
                     {(amount / 10000).toFixed(0)}만원
                   </span>
                 </div>
