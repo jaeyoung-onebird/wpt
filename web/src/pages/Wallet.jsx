@@ -13,17 +13,13 @@ export default function Wallet() {
   const [history, setHistory] = useState([]);
   const [checkinStatus, setCheckinStatus] = useState(null);
   const [checkinLoading, setCheckinLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('balance'); // balance, blockchain, verify, info
+  const [activeTab, setActiveTab] = useState('balance'); // balance, blockchain, collection, info
 
   // 블록체인 기록 관련
   const [myLogs, setMyLogs] = useState([]);
   const [verifying, setVerifying] = useState(null);
   const [downloading, setDownloading] = useState(null);
   const [networkStatus, setNetworkStatus] = useState(null);
-
-  // TX 검증 관련
-  const [txHashInput, setTxHashInput] = useState('');
-  const [verifyingTx, setVerifyingTx] = useState(false);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -147,9 +143,8 @@ export default function Wallet() {
   };
 
   const openPolygonscan = (hash) => {
-    const txHash = hash || txHashInput.trim();
-    if (txHash) {
-      window.open(`https://amoy.polygonscan.com/tx/${txHash}`, '_blank');
+    if (hash) {
+      window.open(`https://amoy.polygonscan.com/tx/${hash}`, '_blank');
     }
   };
 
@@ -208,27 +203,6 @@ export default function Wallet() {
       alert(error.response?.data?.detail || '다운로드에 실패했습니다');
     } finally {
       setDownloading(null);
-    }
-  };
-
-  const handleTxVerify = async () => {
-    if (!txHashInput.trim()) {
-      alert('TX Hash를 입력하세요');
-      return;
-    }
-
-    setVerifyingTx(true);
-    try {
-      const { data } = await chainAPI.verify(txHashInput.trim());
-      if (data.verified) {
-        alert(`블록체인 검증 완료\n\n이벤트: ${data.event_title || '-'}\n날짜: ${data.event_date || '-'}`);
-      } else {
-        alert('검증 실패: ' + (data.message || '기록을 찾을 수 없습니다'));
-      }
-    } catch (error) {
-      alert('검증에 실패했습니다');
-    } finally {
-      setVerifyingTx(false);
     }
   };
 
@@ -423,14 +397,14 @@ export default function Wallet() {
           블록체인
         </button>
         <button
-          onClick={() => setActiveTab('verify')}
+          onClick={() => navigate('/collection')}
           className={`py-2.5 rounded-xl text-xs font-medium transition-all`}
           style={{
-            backgroundColor: activeTab === 'verify' ? 'var(--color-primary)' : 'var(--color-bg)',
-            color: activeTab === 'verify' ? 'white' : 'var(--color-text-secondary)'
+            backgroundColor: 'var(--color-bg)',
+            color: 'var(--color-text-secondary)'
           }}
         >
-          TX검증
+          컬렉션
         </button>
         <button
           onClick={() => setActiveTab('info')}
@@ -588,55 +562,6 @@ export default function Wallet() {
               <p className="text-xs mt-1" style={{ color: 'var(--color-text-disabled)' }}>출퇴근 시 자동으로 기록됩니다</p>
             </div>
           )}
-        </div>
-      )}
-
-      {/* TX 검증 탭 */}
-      {activeTab === 'verify' && (
-        <div className="card">
-          <h3 className="font-semibold mb-3" style={{ color: 'var(--color-text-title)' }}>트랜잭션 검증</h3>
-          <p className="text-xs mb-3" style={{ color: 'var(--color-text-sub)' }}>
-            블록체인 TX Hash를 입력하여 근무 기록을 검증할 수 있습니다
-          </p>
-          <input
-            type="text"
-            value={txHashInput}
-            onChange={(e) => setTxHashInput(e.target.value)}
-            placeholder="TX Hash 입력 (0x...)"
-            className="w-full px-4 py-3 rounded-xl text-xs font-mono mb-3"
-            style={{
-              backgroundColor: 'var(--color-bg)',
-              border: 'none',
-              color: 'var(--color-text-title)'
-            }}
-          />
-          <div className="flex gap-2">
-            <button
-              onClick={() => openPolygonscan()}
-              disabled={!txHashInput.trim()}
-              className="flex-1 py-3 rounded-xl text-sm font-medium transition-all"
-              style={{
-                backgroundColor: !txHashInput.trim() ? '#F3F4F6' : 'var(--color-bg)',
-                color: !txHashInput.trim() ? '#D1D5DB' : 'var(--color-text-secondary)',
-                border: `1px solid ${!txHashInput.trim() ? '#E5E7EB' : 'var(--color-border)'}`,
-                cursor: !txHashInput.trim() ? 'not-allowed' : 'pointer'
-              }}
-            >
-              Polygonscan
-            </button>
-            <button
-              onClick={handleTxVerify}
-              disabled={!txHashInput.trim() || verifyingTx}
-              className="flex-1 py-3 rounded-xl text-sm font-semibold transition-all"
-              style={{
-                backgroundColor: !txHashInput.trim() || verifyingTx ? '#E5E7EB' : 'var(--color-primary)',
-                color: !txHashInput.trim() || verifyingTx ? '#9CA3AF' : 'white',
-                cursor: !txHashInput.trim() || verifyingTx ? 'not-allowed' : 'pointer'
-              }}
-            >
-              {verifyingTx ? '검증 중...' : '검증하기'}
-            </button>
-          </div>
         </div>
       )}
 
