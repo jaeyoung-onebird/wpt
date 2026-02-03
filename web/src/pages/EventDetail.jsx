@@ -48,9 +48,11 @@ export default function EventDetail() {
 
       if (conflictData.has_conflict) {
         const conflicts = conflictData.conflicting_events;
-        const conflictMessage = conflicts.map(c =>
-          `• ${c.title} (${new Date(c.start_date).toLocaleDateString()} ~ ${new Date(c.end_date).toLocaleDateString()})`
-        ).join('\n');
+        const conflictMessage = conflicts.map(c => {
+          const date = c.event_date ? new Date(c.event_date).toLocaleDateString() : '날짜 미정';
+          const time = c.start_time && c.end_time ? ` ${c.start_time} ~ ${c.end_time}` : '';
+          return `• ${c.title} (${date}${time})`;
+        }).join('\n');
 
         const confirmed = confirm(
           `⚠️ 일정이 겹치는 행사가 있습니다:\n\n${conflictMessage}\n\n그래도 지원하시겠습니까?`
