@@ -1,5 +1,5 @@
 """Applications Routes"""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..dependencies import get_db, require_auth, require_admin, require_worker
 from ..schemas.application import (
@@ -185,7 +185,7 @@ async def cancel_application(
 
 @router.post("/check-conflict")
 async def check_schedule_conflict(
-    event_id: int,
+    event_id: int = Query(..., description="Event ID to check for conflicts"),
     auth: dict = Depends(require_worker),
     db: Database = Depends(get_db)
 ):
@@ -198,7 +198,7 @@ async def check_schedule_conflict(
     if not target_event:
         raise HTTPException(status_code=404, detail="행사를 찾을 수 없습니다")
 
-    target_work_date = target_event.get("work_date") or target_event.get("event_date")
+    target_work_date = target_event.get("event_date")
 
     if not target_work_date:
         raise HTTPException(status_code=400, detail="행사 날짜 정보가 없습니다")
@@ -210,13 +210,13 @@ async def check_schedule_conflict(
 
         query = """
             SELECT a.id, a.event_id, e.title,
-                   COALESCE(e.work_date, e.event_date) as event_date,
+                   e.event_date,
                    e.location, e.start_time, e.end_time
             FROM applications a
             JOIN events e ON a.event_id = e.id
             WHERE a.worker_id = %s
-            AND a.status = 'APPROVED'
-            AND COALESCE(e.work_date, e.event_date) = %s
+            AND a.status = 'CONFIRMED'
+            AND e.event_date = %s
         """
 
         cursor.execute(query, (worker_id, target_work_date))

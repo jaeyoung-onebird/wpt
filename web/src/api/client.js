@@ -94,7 +94,7 @@ export const applicationsAPI = {
   get: (id) => api.get(`/api/applications/${id}`),
   updateStatus: (id, status, reason) => api.patch(`/api/applications/${id}/status`, { status, rejection_reason: reason }),
   cancel: (id) => api.delete(`/api/applications/${id}`),
-  checkConflict: (eventId) => api.post('/api/applications/check-conflict', { event_id: eventId }),
+  checkConflict: (eventId) => api.post('/api/applications/check-conflict', null, { params: { event_id: eventId } }),
 };
 
 // Attendance API

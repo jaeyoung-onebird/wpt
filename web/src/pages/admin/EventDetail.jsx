@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { eventsAPI, adminAPI, workersAPI, attendanceAPI } from '../../api/client';
-import { formatDateTime, formatTime } from '../../utils/format';
+import { eventsAPI, adminAPI, workersAPI } from '../../api/client';
+import { formatDateTime } from '../../utils/format';
 
 export default function AdminEventDetail() {
   const { id } = useParams();
@@ -14,15 +14,6 @@ export default function AdminEventDetail() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  // 출퇴근 관리
-  const [confirmedWorkers, setConfirmedWorkers] = useState([]);
-  const [loadingConfirmed, setLoadingConfirmed] = useState(false);
-  const [showOnlyInRange, setShowOnlyInRange] = useState(false);
-
-  // 근무자 정보 모달
-  const [selectedWorker, setSelectedWorker] = useState(null);
-  const [showWorkerModal, setShowWorkerModal] = useState(false);
-  const [workerDetails, setWorkerDetails] = useState(null);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -169,111 +160,6 @@ export default function AdminEventDetail() {
     }
   };
 
-  // 출퇴근 관리 functions
-  const loadConfirmedWorkers = async () => {
-    if (!id) return;
-    setLoadingConfirmed(true);
-    try {
-      const { data } = await attendanceAPI.getConfirmedWorkers(id);
-      setConfirmedWorkers(data.workers || []);
-    } catch (error) {
-      console.error('Failed to load confirmed workers:', error);
-      setConfirmedWorkers([]);
-    } finally {
-      setLoadingConfirmed(false);
-    }
-  };
-
-  const handleGPSCheckIn = async (applicationId, gpsLocation) => {
-    if (!confirm('이 근무자를 출근 처리하시겠습니까?')) return;
-
-    try {
-      const latitude = gpsLocation ? gpsLocation.latitude : null;
-      const longitude = gpsLocation ? gpsLocation.longitude : null;
-      await attendanceAPI.adminCheckIn(applicationId, false, latitude, longitude);
-      alert('출근 처리되었습니다');
-      loadConfirmedWorkers();
-    } catch (error) {
-      alert(error.response?.data?.detail || '출근 처리에 실패했습니다');
-    }
-  };
-
-  const handleGPSCheckOut = async (attendanceId, gpsLocation) => {
-    if (!confirm('이 근무자를 퇴근 처리하시겠습니까?')) return;
-
-    try {
-      const latitude = gpsLocation ? gpsLocation.latitude : null;
-      const longitude = gpsLocation ? gpsLocation.longitude : null;
-      await attendanceAPI.adminCheckOut(attendanceId, false, latitude, longitude);
-      alert('퇴근 처리되었습니다');
-      loadConfirmedWorkers();
-    } catch (error) {
-      alert(error.response?.data?.detail || '퇴근 처리에 실패했습니다');
-    }
-  };
-
-  const handleManualCheckIn = async (applicationId) => {
-    if (!confirm('이 근무자를 수동으로 출근 처리하시겠습니까?')) return;
-
-    try {
-      await attendanceAPI.adminCheckIn(applicationId, true);
-      alert('출근 처리되었습니다');
-      loadConfirmedWorkers();
-    } catch (error) {
-      alert(error.response?.data?.detail || '출근 처리에 실패했습니다');
-    }
-  };
-
-  const handleManualCheckOut = async (attendanceId) => {
-    if (!confirm('이 근무자를 수동으로 퇴근 처리하시겠습니까?')) return;
-
-    try {
-      await attendanceAPI.adminCheckOut(attendanceId, true);
-      alert('퇴근 처리되었습니다');
-      loadConfirmedWorkers();
-    } catch (error) {
-      alert(error.response?.data?.detail || '퇴근 처리에 실패했습니다');
-    }
-  };
-
-  const handleSmartCheckIn = async (worker) => {
-    const useGPS = worker.gps_location && worker.within_range;
-
-    if (useGPS) {
-      await handleGPSCheckIn(worker.application_id, worker.gps_location);
-    } else {
-      await handleManualCheckIn(worker.application_id);
-    }
-  };
-
-  const handleSmartCheckOut = async (worker) => {
-    const useGPS = worker.gps_location && worker.within_range;
-
-    if (useGPS) {
-      await handleGPSCheckOut(worker.attendance_id, worker.gps_location);
-    } else {
-      await handleManualCheckOut(worker.attendance_id);
-    }
-  };
-
-  // Load confirmed workers when attendance tab is active
-  useEffect(() => {
-    if (tab === 'attendance' && id) {
-      loadConfirmedWorkers();
-    }
-  }, [tab, id]);
-
-  // 근무자 정보 조회
-  const handleWorkerClick = async (workerId) => {
-    try {
-      const { data } = await workersAPI.get(workerId);
-      setWorkerDetails(data);
-      setShowWorkerModal(true);
-    } catch (error) {
-      console.error('Failed to load worker details:', error);
-      alert('근무자 정보를 불러오는데 실패했습니다');
-    }
-  };
 
   if (loading) {
     return (
@@ -369,131 +255,10 @@ export default function AdminEventDetail() {
         >
           행사 정보
         </button>
-        <button
-          onClick={() => setTab('attendance')}
-          className="flex-1 py-3 text-center font-medium text-sm"
-          style={{
-            color: tab === 'attendance' ? 'var(--color-primary)' : 'var(--color-text-sub)',
-            borderBottom: tab === 'attendance' ? '2px solid var(--color-primary)' : 'none'
-          }}
-        >
-          출퇴근 관리
-        </button>
       </div>
 
       {/* 컨텐츠 */}
-      {tab === 'attendance' ? (
-        <div className="space-y-3">
-          {loadingConfirmed ? (
-            <div className="flex justify-center py-10">
-              <div className="animate-spin rounded-full h-6 w-6 border-2 border-gray-300 border-t-gray-900"></div>
-            </div>
-          ) : confirmedWorkers.length > 0 ? (
-            <>
-              <div className="flex justify-between items-center mb-2">
-                <h3 className="font-semibold text-sm">확정 근무자</h3>
-                <label className="flex items-center gap-2 text-xs">
-                  <input
-                    type="checkbox"
-                    checked={showOnlyInRange}
-                    onChange={(e) => setShowOnlyInRange(e.target.checked)}
-                    className="rounded"
-                  />
-                  범위 내만 표시
-                </label>
-              </div>
-              {confirmedWorkers
-                .filter(worker => !showOnlyInRange || worker.within_range)
-                .map((worker) => {
-                  const hasGPS = worker.gps_location;
-                  const inRange = worker.within_range;
-                  const useGPS = hasGPS && inRange;
-
-                  return (
-                    <div
-                      key={worker.application_id}
-                      className={`card ${inRange ? 'bg-green-50 border border-green-200' : ''}`}
-                    >
-                      <div className="flex justify-between items-start mb-2">
-                        <div className="flex-1">
-                          <h4
-                            className="font-medium text-sm cursor-pointer hover:text-blue-600 transition-colors"
-                            onClick={() => handleWorkerClick(worker.worker_id)}
-                          >
-                            {worker.worker_name}
-                          </h4>
-                          <p className="text-xs text-gray-500">{worker.worker_phone}</p>
-
-                          {/* GPS 상태 */}
-                          <div className="mt-1 flex gap-3 text-xs">
-                            {hasGPS ? (
-                              <>
-                                {inRange ? (
-                                  <span className="text-green-600 font-medium">
-                                    📍 범위 내 ({worker.distance_meters}m)
-                                  </span>
-                                ) : (
-                                  <span className="text-orange-600">
-                                    📍 범위 밖 ({worker.distance_meters}m)
-                                  </span>
-                                )}
-                                <span className="text-gray-500">
-                                  🕐 {new Date(worker.gps_location.updated_at).toLocaleTimeString('ko-KR')}
-                                </span>
-                              </>
-                            ) : (
-                              <span className="text-gray-400">⚫ GPS 근무 범위 밖</span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* 출퇴근 상태 및 버튼 */}
-                      <div className="flex gap-2 mt-2">
-                        {worker.check_out_time ? (
-                          <div className="flex-1 py-2 px-3 bg-gray-100 rounded-lg text-center">
-                            <span className="text-xs font-medium text-gray-600">✓ 퇴근완료</span>
-                            <div className="text-xs text-gray-500 mt-0.5">
-                              {formatTime(worker.check_in_time)} ~ {formatTime(worker.check_out_time)}
-                            </div>
-                          </div>
-                        ) : worker.check_in_time ? (
-                          <>
-                            <div className="flex-1 py-2 px-3 bg-blue-50 rounded-lg">
-                              <span className="text-xs font-medium text-blue-600">✓ 근무중</span>
-                              <div className="text-xs text-blue-500 mt-0.5">
-                                출근: {formatTime(worker.check_in_time)}
-                              </div>
-                            </div>
-                            <button
-                              onClick={() => handleSmartCheckOut(worker)}
-                              className="px-4 py-2 rounded-lg text-xs font-medium text-white"
-                              style={{ backgroundColor: 'var(--color-primary)' }}
-                            >
-                              퇴근 처리
-                            </button>
-                          </>
-                        ) : (
-                          <button
-                            onClick={() => handleSmartCheckIn(worker)}
-                            className="flex-1 py-2 rounded-lg text-xs font-medium text-white"
-                            style={{ backgroundColor: 'var(--color-primary)' }}
-                          >
-                            {useGPS ? '출근 처리' : '수동 출근'}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-            </>
-          ) : (
-            <div className="card text-center py-10">
-              <p style={{ color: 'var(--color-text-disabled)' }}>확정된 근무자가 없습니다</p>
-            </div>
-          )}
-        </div>
-      ) : tab === 'applications' ? (
+      {tab === 'applications' ? (
         <div className="space-y-3">
           {applications.length > 0 ? (
             applications.map((app) => (
@@ -690,125 +455,6 @@ export default function AdminEventDetail() {
         </div>
       )}
 
-      {/* 근무자 정보 모달 */}
-      {showWorkerModal && workerDetails && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}
-          onClick={() => setShowWorkerModal(false)}
-        >
-          <div
-            className="w-full max-w-md rounded-2xl p-6 max-h-[80vh] overflow-y-auto"
-            style={{ backgroundColor: 'var(--color-bg-card)' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* 헤더 */}
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-bold" style={{ color: 'var(--color-text-title)' }}>
-                근무자 정보
-              </h3>
-              <button
-                onClick={() => setShowWorkerModal(false)}
-                className="text-gray-500 hover:text-gray-700 text-2xl leading-none"
-              >
-                ×
-              </button>
-            </div>
-
-            {/* 사진 */}
-            {workerDetails.photo && (
-              <div className="flex justify-center mb-4">
-                <img
-                  src={workersAPI.getPhotoUrlFromPath(workerDetails.photo)}
-                  alt={workerDetails.name}
-                  className="w-24 h-24 rounded-full object-cover"
-                  onClick={() => window.open(workersAPI.getPhotoUrlFromPath(workerDetails.photo), '_blank')}
-                />
-              </div>
-            )}
-
-            {/* 정보 */}
-            <div className="space-y-3">
-              <div className="flex justify-between py-2" style={{ borderBottom: '1px solid var(--color-border)' }}>
-                <span className="text-sm" style={{ color: 'var(--color-text-sub)' }}>이름</span>
-                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
-                  {workerDetails.name}
-                </span>
-              </div>
-
-              <div className="flex justify-between py-2" style={{ borderBottom: '1px solid var(--color-border)' }}>
-                <span className="text-sm" style={{ color: 'var(--color-text-sub)' }}>전화번호</span>
-                <a
-                  href={`tel:${workerDetails.phone}`}
-                  className="text-sm font-medium"
-                  style={{ color: 'var(--color-primary)' }}
-                >
-                  {workerDetails.phone}
-                </a>
-              </div>
-
-              {workerDetails.birth_date && (
-                <div className="flex justify-between py-2" style={{ borderBottom: '1px solid var(--color-border)' }}>
-                  <span className="text-sm" style={{ color: 'var(--color-text-sub)' }}>생년월일</span>
-                  <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
-                    {workerDetails.birth_date}
-                  </span>
-                </div>
-              )}
-
-              {workerDetails.residence && (
-                <div className="flex justify-between py-2" style={{ borderBottom: '1px solid var(--color-border)' }}>
-                  <span className="text-sm" style={{ color: 'var(--color-text-sub)' }}>거주지</span>
-                  <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
-                    {workerDetails.residence}
-                  </span>
-                </div>
-              )}
-
-              {workerDetails.bank_name && (
-                <div className="flex justify-between py-2" style={{ borderBottom: '1px solid var(--color-border)' }}>
-                  <span className="text-sm" style={{ color: 'var(--color-text-sub)' }}>은행</span>
-                  <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
-                    {workerDetails.bank_name}
-                  </span>
-                </div>
-              )}
-
-              {workerDetails.account_number && (
-                <div className="flex justify-between py-2" style={{ borderBottom: '1px solid var(--color-border)' }}>
-                  <span className="text-sm" style={{ color: 'var(--color-text-sub)' }}>계좌번호</span>
-                  <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
-                    {workerDetails.account_number}
-                  </span>
-                </div>
-              )}
-
-              <div className="flex justify-between py-2" style={{ borderBottom: '1px solid var(--color-border)' }}>
-                <span className="text-sm" style={{ color: 'var(--color-text-sub)' }}>운전면허</span>
-                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
-                  {workerDetails.has_driver_license ? '있음' : '없음'}
-                </span>
-              </div>
-
-              <div className="flex justify-between py-2" style={{ borderBottom: '1px solid var(--color-border)' }}>
-                <span className="text-sm" style={{ color: 'var(--color-text-sub)' }}>경호이수증</span>
-                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
-                  {workerDetails.has_security_cert ? '있음' : '없음'}
-                </span>
-              </div>
-            </div>
-
-            {/* 닫기 버튼 */}
-            <button
-              onClick={() => setShowWorkerModal(false)}
-              className="w-full mt-6 py-2.5 rounded-xl text-sm font-medium"
-              style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text-secondary)' }}
-            >
-              닫기
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
