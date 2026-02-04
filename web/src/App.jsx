@@ -18,6 +18,7 @@ import Attendance from './pages/Attendance';
 import History from './pages/History'; // 새 History 페이지 (WPT + NFT + 이력)
 import My from './pages/My';
 import Notifications from './pages/Notifications';
+import Leaderboard from './pages/Leaderboard';
 
 // 레거시 페이지 (리다이렉트용)
 import Wallet from './pages/Wallet';
@@ -163,6 +164,14 @@ function AppRoutes() {
           element={
             <PrivateRoute>
               <My />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/leaderboard"
+          element={
+            <PrivateRoute>
+              <Leaderboard />
             </PrivateRoute>
           }
         />
