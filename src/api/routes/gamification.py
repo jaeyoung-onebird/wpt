@@ -387,7 +387,6 @@ async def get_leaderboard(
             SELECT
                 wm.worker_id,
                 w.name,
-                w.photo,
                 wm.level,
                 wm.experience_points,
                 wm.reliability_score,
