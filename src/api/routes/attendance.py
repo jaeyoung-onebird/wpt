@@ -2,8 +2,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from io import BytesIO
-from datetime import datetime
+from datetime import datetime, date
 import logging
+import json
 
 from ..dependencies import get_db, require_auth, require_admin, require_worker
 from ..schemas.attendance import (
@@ -16,64 +17,233 @@ from utils import now_kst
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# 근무 완료 보상 (WPT)
-WORK_COMPLETION_REWARD = 2
+# ============================================
+# Gamification Helper Functions
+# ============================================
 
-
-def _reward_work_completion(worker_id: int, db: Database):
-    """근무 완료 시 WPT 보상 지급"""
-    from psycopg2.extras import RealDictCursor
-    # 근무자 정보 조회
+def _get_gamification_config(db: Database, key: str):
+    """게임화 설정 조회"""
     with db.get_connection() as conn:
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-        cursor.execute("SELECT * FROM workers WHERE id = %s", (worker_id,))
-        row = cursor.fetchone()
-        if not row:
-            return
-        worker = dict(row)
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM gamification_config WHERE key = %s", (key,))
+        result = cursor.fetchone()
+        if result:
+            return json.loads(result[0])
+        return {}
 
-    wallet_address = worker.get("wallet_address")
 
-    # 지갑 주소가 없으면 생성
-    if not wallet_address:
-        wallet_address = wpt_service.get_deterministic_address(worker_id)
-        db.set_worker_wallet_address(worker_id, wallet_address)
+def _award_wpt(db: Database, worker_id: int, amount: int, category: str, description: str, reference_type: str = None, reference_id: int = None):
+    """WPT 지급"""
+    with db.get_connection() as conn:
+        cursor = conn.cursor()
 
-    tx_hash = None
-    reason = "근무 완료 보상"
+        # 현재 잔액 조회
+        cursor.execute("SELECT COALESCE(wpt_balance, 0) FROM worker_metrics WHERE worker_id = %s", (worker_id,))
+        result = cursor.fetchone()
+        balance = result[0] if result else 0
+        new_balance = balance + amount
 
-    if wpt_service.enabled:
-        # WPT 토큰 발행
-        result = wpt_service.mint_credits(
-            wallet_address,
-            WORK_COMPLETION_REWARD,
-            reason
-        )
-        if result["success"]:
-            tx_hash = result.get("tx_hash")
-            logger.info(f"Work completion reward: {WORK_COMPLETION_REWARD} WPT to worker {worker_id}")
+        # 트랜잭션 기록 (트리거가 자동으로 wpt_balance 업데이트)
+        cursor.execute("""
+            INSERT INTO wpt_transactions (worker_id, type, category, amount, balance_after, reference_type, reference_id, description)
+            VALUES (%s, 'EARN', %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """, (worker_id, category, amount, new_balance, reference_type, reference_id, description))
+
+        transaction_id = cursor.fetchone()[0]
+        conn.commit()
+
+        logger.info(f"WPT awarded: {amount} to worker {worker_id}, category: {category}")
+
+        return {
+            "transaction_id": transaction_id,
+            "amount": amount,
+            "balance": new_balance,
+            "category": category
+        }
+
+
+def _add_experience(db: Database, worker_id: int, exp: int, reason: str):
+    """경험치 추가 및 레벨업 체크"""
+    with db.get_connection() as conn:
+        cursor = conn.cursor()
+
+        # 현재 레벨/경험치 조회
+        cursor.execute("""
+            SELECT level, experience_points FROM worker_metrics WHERE worker_id = %s
+        """, (worker_id,))
+        result = cursor.fetchone()
+
+        if not result:
+            current_level = 1
+            current_exp = 0
         else:
-            logger.error(f"Failed to mint work completion reward: {result.get('error')}")
-            return
+            current_level, current_exp = result
 
-    # DB 토큰 추가
-    db.add_tokens(worker_id, WORK_COMPLETION_REWARD)
+        new_exp = current_exp + exp
 
-    # 새 잔액 조회
-    if wpt_service.enabled:
-        new_balance = wpt_service.get_balance(wallet_address)
-    else:
-        new_balance = db.get_worker_tokens(worker_id)
+        # 레벨업 체크
+        cursor.execute("""
+            SELECT level, required_exp FROM worker_levels
+            WHERE required_exp <= %s
+            ORDER BY level DESC
+            LIMIT 1
+        """, (new_exp,))
+        level_info = cursor.fetchone()
 
-    # 거래 내역 저장
-    db.create_credit_history(
-        worker_id=worker_id,
-        amount=WORK_COMPLETION_REWARD,
-        balance_after=new_balance,
-        tx_type="WORK_REWARD",
-        reason=reason,
-        tx_hash=tx_hash
-    )
+        new_level = level_info[0] if level_info else current_level
+        leveled_up = new_level > current_level
+
+        # 업데이트
+        cursor.execute("""
+            UPDATE worker_metrics
+            SET level = %s, experience_points = %s
+            WHERE worker_id = %s
+        """, (new_level, new_exp, worker_id))
+
+        conn.commit()
+
+        if leveled_up:
+            logger.info(f"Worker {worker_id} leveled up: {current_level} -> {new_level}")
+
+        return {
+            "exp_gained": exp,
+            "total_exp": new_exp,
+            "level": new_level,
+            "leveled_up": leveled_up,
+            "reason": reason
+        }
+
+
+def _process_checkin_reward(db: Database, worker_id: int, attendance_id: int):
+    """출근 보상 처리 (Streak 포함)"""
+    try:
+        # 설정 로드
+        rewards = _get_gamification_config(db, "wpt_rewards")
+        checkin_wpt = rewards.get("checkin", 10)
+
+        # Streak 업데이트
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+
+            today = date.today()
+
+            cursor.execute("""
+                SELECT current_streak, last_checkin_date, longest_streak
+                FROM worker_streaks
+                WHERE worker_id = %s
+            """, (worker_id,))
+            streak_data = cursor.fetchone()
+
+            if not streak_data:
+                # 첫 출석
+                new_streak = 1
+                longest = 1
+            else:
+                current_streak, last_date, longest = streak_data
+
+                if last_date:
+                    days_diff = (today - last_date).days
+
+                    if days_diff == 1:
+                        # 연속 출석
+                        new_streak = current_streak + 1
+                    elif days_diff == 0:
+                        # 오늘 이미 출석 (보상은 처음 1회만)
+                        return None
+                    else:
+                        # 끊김
+                        new_streak = 1
+                else:
+                    new_streak = 1
+
+                longest = max(longest or 0, new_streak)
+
+            # Streak 업데이트
+            cursor.execute("""
+                INSERT INTO worker_streaks (worker_id, current_streak, longest_streak, last_checkin_date)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (worker_id)
+                DO UPDATE SET
+                    current_streak = EXCLUDED.current_streak,
+                    longest_streak = EXCLUDED.longest_streak,
+                    last_checkin_date = EXCLUDED.last_checkin_date,
+                    updated_at = CURRENT_TIMESTAMP
+            """, (worker_id, new_streak, longest, today))
+
+            conn.commit()
+
+        # Streak 보너스 계산
+        streak_bonus = 0
+        if new_streak >= 3:
+            streak_bonus = rewards.get("streak_bonus", 5) * (new_streak // 3)
+
+        total_wpt = checkin_wpt + streak_bonus
+
+        # WPT 지급
+        transaction = _award_wpt(
+            db, worker_id, total_wpt, "checkin",
+            f"출근 보상 (+{checkin_wpt} WPT) + 연속 출석 보너스 (+{streak_bonus} WPT)",
+            "attendance", attendance_id
+        )
+
+        # 경험치 지급
+        exp_result = _add_experience(db, worker_id, 5, "출근 완료")
+
+        return {
+            "wpt_reward": transaction,
+            "streak": {
+                "current": new_streak,
+                "longest": longest,
+                "bonus_wpt": streak_bonus
+            },
+            "exp": exp_result
+        }
+    except Exception as e:
+        logger.error(f"Checkin reward failed: {e}", exc_info=True)
+        return None
+
+
+def _process_checkout_reward(db: Database, worker_id: int, attendance_id: int, check_in_time, check_out_time):
+    """퇴근 보상 처리"""
+    try:
+        # 근무 시간 계산
+        if isinstance(check_in_time, str):
+            check_in_time = datetime.fromisoformat(check_in_time)
+        if isinstance(check_out_time, str):
+            check_out_time = datetime.fromisoformat(check_out_time)
+
+        work_hours = (check_out_time - check_in_time).total_seconds() / 3600
+
+        # 설정 로드
+        rewards = _get_gamification_config(db, "wpt_rewards")
+        checkout_wpt = rewards.get("checkout", 10)
+
+        # 근무 시간 보너스 (시간당 5 WPT)
+        time_bonus = int(work_hours * 5)
+
+        total_wpt = checkout_wpt + time_bonus
+
+        # WPT 지급
+        transaction = _award_wpt(
+            db, worker_id, total_wpt, "checkout",
+            f"퇴근 보상 (+{checkout_wpt} WPT) + 근무시간 보너스 (+{time_bonus} WPT, {work_hours:.1f}h)",
+            "attendance", attendance_id
+        )
+
+        # 경험치 지급
+        exp_bonus = int(work_hours * 2)
+        exp_result = _add_experience(db, worker_id, exp_bonus, f"근무 완료 ({work_hours:.1f}시간)")
+
+        return {
+            "wpt_reward": transaction,
+            "work_hours": round(work_hours, 1),
+            "time_bonus": time_bonus,
+            "exp": exp_result
+        }
+    except Exception as e:
+        logger.error(f"Checkout reward failed: {e}", exc_info=True)
+        return None
 
 
 def _enrich_attendance(att: dict, db: Database) -> dict:
@@ -143,8 +313,19 @@ async def check_in(
     # 출근 처리
     db.check_in(attendance["id"])
 
+    # WPT 출근 보상 지급
+    reward_result = _process_checkin_reward(db, worker["id"], attendance["id"])
+    if reward_result:
+        logger.info(f"Check-in reward: {reward_result['wpt_reward']['amount']} WPT, streak: {reward_result['streak']['current']}")
+
     updated = db.get_attendance_by_code(data.check_in_code)
-    return AttendanceResponse(**_enrich_attendance(updated, db))
+    enriched = _enrich_attendance(updated, db)
+
+    # 보상 정보 추가
+    if reward_result:
+        enriched["wpt_reward"] = reward_result
+
+    return AttendanceResponse(**enriched)
 
 
 @router.post("/{attendance_id}/check-out", response_model=AttendanceResponse)
@@ -237,13 +418,24 @@ async def check_out(
         # 블록체인 기록 실패해도 퇴근 처리는 완료
         logger.error(f"Blockchain recording failed: {e}")
 
-    # WPT 근무 완료 보상 지급
-    try:
-        _reward_work_completion(updated["worker_id"], db)
-    except Exception as e:
-        logger.error(f"WPT reward failed: {e}")
+    # WPT 퇴근 보상 지급
+    reward_result = _process_checkout_reward(
+        db,
+        updated["worker_id"],
+        updated["id"],
+        updated["check_in_time"],
+        updated["check_out_time"]
+    )
+    if reward_result:
+        logger.info(f"Check-out reward: {reward_result['wpt_reward']['amount']} WPT, hours: {reward_result['work_hours']}")
 
-    return AttendanceResponse(**_enrich_attendance(updated, db))
+    enriched = _enrich_attendance(updated, db)
+
+    # 보상 정보 추가
+    if reward_result:
+        enriched["wpt_reward"] = reward_result
+
+    return AttendanceResponse(**enriched)
 
 
 @router.get("/me", response_model=AttendanceListResponse)
@@ -933,10 +1125,16 @@ async def admin_check_in_worker(
     # 출근 처리
     db.check_in(attendance_id)
 
+    # WPT 출근 보상 지급
+    reward_result = _process_checkin_reward(db, worker_id, attendance_id)
+    if reward_result:
+        logger.info(f"Admin check-in reward: {reward_result['wpt_reward']['amount']} WPT, streak: {reward_result['streak']['current']}")
+
     return {
         "message": "출근 처리가 완료되었습니다",
         "attendance_id": attendance_id,
-        "manual": manual
+        "manual": manual,
+        "wpt_reward": reward_result
     }
 
 
@@ -987,8 +1185,23 @@ async def admin_check_out_worker(
     # 퇴근 처리
     db.check_out(attendance_id, admin_user["id"])
 
+    # 업데이트된 출석 정보 재조회
+    updated_attendance = db.get_attendance(attendance_id)
+
+    # WPT 퇴근 보상 지급
+    reward_result = _process_checkout_reward(
+        db,
+        updated_attendance["worker_id"],
+        attendance_id,
+        updated_attendance["check_in_time"],
+        updated_attendance["check_out_time"]
+    )
+    if reward_result:
+        logger.info(f"Admin check-out reward: {reward_result['wpt_reward']['amount']} WPT, hours: {reward_result['work_hours']}")
+
     return {
         "message": "퇴근 처리가 완료되었습니다",
         "attendance_id": attendance_id,
-        "manual": manual
+        "manual": manual,
+        "wpt_reward": reward_result
     }
