@@ -14,7 +14,7 @@ export default function WorkOS() {
   const [loading, setLoading] = useState(true);
 
   // 메인 탭: list or calendar
-  const [mainTab, setMainTab] = useState(searchParams.get('tab') || 'list');
+  const [mainTab, setMainTab] = useState(searchParams.get('view') || 'list');
 
   // List 탭의 서브탭: attendance, applications, history
   const [activeTab, setActiveTab] = useState('attendance');
@@ -51,8 +51,8 @@ export default function WorkOS() {
 
   // URL 쿼리 파라미터와 동기화
   useEffect(() => {
-    const tab = searchParams.get('tab');
-    if (tab === 'calendar') {
+    const view = searchParams.get('view');
+    if (view === 'calendar') {
       setMainTab('calendar');
     } else {
       setMainTab('list');
@@ -61,7 +61,7 @@ export default function WorkOS() {
 
   const handleMainTabChange = (tab) => {
     setMainTab(tab);
-    setSearchParams(tab === 'calendar' ? { tab: 'calendar' } : {});
+    setSearchParams(tab === 'calendar' ? { view: 'calendar' } : {});
   };
 
   const loadData = async () => {
@@ -97,7 +97,8 @@ export default function WorkOS() {
       setLastAction({
         type: 'checkin',
         eventTitle: data.event_title || '행사',
-        time: data.check_in_time
+        time: data.check_in_time,
+        wptEarned: data.wpt_earned || 10 // 기본 출근 보상
       });
       setShowSuccess('checkin');
       setCheckInCode('');
@@ -115,12 +116,17 @@ export default function WorkOS() {
     try {
       const { data } = await attendanceAPI.checkOut(attendanceId);
       const netPay = data.pay_amount ? Math.round(data.pay_amount * 0.967) : 0;
+      const workedHours = data.worked_minutes ? Math.floor(data.worked_minutes / 60) : 0;
+      const wptEarned = data.wpt_earned || (workedHours * 50); // 시간당 50 WPT
+
       setLastAction({
         type: 'checkout',
         eventTitle: eventTitle || data.event_title || '행사',
         workedMinutes: data.worked_minutes,
         payAmount: data.pay_amount,
-        netPay: netPay
+        netPay: netPay,
+        wptEarned: wptEarned,
+        experience: data.experience_gained || 0
       });
       setShowSuccess('checkout');
       loadData();
@@ -310,16 +316,21 @@ export default function WorkOS() {
               </svg>
             </div>
             <h2 className="text-xl font-bold mb-1" style={{ color: 'var(--color-text-title)' }}>업무 시작 완료!</h2>
-            <p className="text-sm mb-4" style={{ color: 'var(--color-text-secondary)' }}>
+            <p className="text-sm mb-3" style={{ color: 'var(--color-text-secondary)' }}>
               <span className="font-medium">{lastAction.eventTitle}</span>에<br />
               {lastAction.time}에 업무를 시작했습니다
             </p>
+            {/* WPT 보상 */}
+            <div className="rounded-xl p-3 mb-4" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+              <p className="text-white/80 text-xs mb-1">✨ 출근 보상</p>
+              <p className="text-white text-2xl font-bold">+{lastAction.wptEarned} WPT</p>
+            </div>
             <button
               onClick={() => setShowSuccess(null)}
-              className="px-6 py-2.5 rounded-xl text-sm font-medium"
-              style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text-secondary)' }}
+              className="w-full py-2.5 rounded-xl text-sm font-medium text-white"
+              style={{ backgroundColor: 'var(--color-primary)' }}
             >
-              닫기
+              확인
             </button>
           </div>
         </div>
@@ -335,8 +346,8 @@ export default function WorkOS() {
               </svg>
             </div>
             <h2 className="text-xl font-bold mb-1" style={{ color: 'var(--color-text-title)' }}>수고하셨습니다!</h2>
-            <p className="text-sm mb-4" style={{ color: 'var(--color-text-secondary)' }}>{lastAction.eventTitle} 업무 종료</p>
-            <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: 'var(--color-bg)' }}>
+            <p className="text-sm mb-3" style={{ color: 'var(--color-text-secondary)' }}>{lastAction.eventTitle} 업무 종료</p>
+            <div className="rounded-xl p-3 mb-3" style={{ backgroundColor: 'var(--color-bg)' }}>
               <p className="text-xs mb-1" style={{ color: 'var(--color-text-sub)' }}>오늘 근무</p>
               <p className="text-lg font-bold mb-2" style={{ color: 'var(--color-text-title)' }}>
                 {formatWorkedTime(lastAction.workedMinutes)}
@@ -345,6 +356,25 @@ export default function WorkOS() {
               <p className="text-2xl font-bold" style={{ color: 'var(--color-primary)' }}>
                 {formatPay(lastAction.netPay)}
               </p>
+            </div>
+            {/* WPT 보상 */}
+            <div className="rounded-xl p-3 mb-4" style={{ background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)' }}>
+              <p className="text-white/80 text-xs mb-1">🎁 근무 보상</p>
+              <div className="flex items-center justify-center gap-3">
+                <div className="text-center">
+                  <p className="text-white text-2xl font-bold">+{lastAction.wptEarned}</p>
+                  <p className="text-white/70 text-xs">WPT</p>
+                </div>
+                {lastAction.experience > 0 && (
+                  <>
+                    <div className="text-white/50">|</div>
+                    <div className="text-center">
+                      <p className="text-white text-2xl font-bold">+{lastAction.experience}</p>
+                      <p className="text-white/70 text-xs">EXP</p>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
             <button
               onClick={() => setShowSuccess(null)}

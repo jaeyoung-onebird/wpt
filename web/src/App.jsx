@@ -100,32 +100,13 @@ function AppRoutes() {
         <Route path="/attendance" element={<Navigate to="/work" replace />} />
         <Route path="/work-history" element={<Navigate to="/work" replace />} />
         <Route path="/profile" element={<Navigate to="/my" replace />} />
-        <Route
-          path="/badges"
-          element={
-            <PrivateRoute>
-              <Badges />
-            </PrivateRoute>
-          }
-        />
-        <Route
-          path="/badges/:id"
-          element={
-            <PrivateRoute>
-              <BadgeDetail />
-            </PrivateRoute>
-          }
-        />
+        {/* Legacy routes → History redirect */}
+        <Route path="/badges" element={<Navigate to="/history" replace />} />
+        <Route path="/badges/:id" element={<Navigate to="/history" replace />} />
 
-        {/* 새 통합 페이지 */}
-        <Route
-          path="/wallet"
-          element={
-            <PrivateRoute>
-              <Wallet />
-            </PrivateRoute>
-          }
-        />
+        {/* Legacy routes → History redirect */}
+        <Route path="/wallet" element={<Navigate to="/history" replace />} />
+        <Route path="/blockchain" element={<Navigate to="/history" replace />} />
         <Route
           path="/notifications"
           element={
@@ -142,15 +123,8 @@ function AppRoutes() {
             </PrivateRoute>
           }
         />
-        <Route path="/calendar" element={<Navigate to="/work?tab=calendar" replace />} />
-        <Route
-          path="/collection"
-          element={
-            <PrivateRoute>
-              <Collection />
-            </PrivateRoute>
-          }
-        />
+        <Route path="/calendar" element={<Navigate to="/work?view=calendar" replace />} />
+        <Route path="/collection" element={<Navigate to="/history" replace />} />
         <Route
           path="/my"
           element={
