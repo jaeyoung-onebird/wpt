@@ -6,6 +6,7 @@ from app.api.auth import router as auth_router
 from app.api.org import router as org_router
 from app.api.worker import router as worker_router
 from app.api.admin import router as admin_router
+from app.api.routes import ai_matching
 
 
 def create_app() -> FastAPI:
@@ -33,6 +34,7 @@ def create_app() -> FastAPI:
     app.include_router(org_router.router, prefix="/api/org", tags=["Organization"])
     app.include_router(worker_router.router, prefix="/api/worker", tags=["Worker"])
     app.include_router(admin_router.router, prefix="/api/admin", tags=["Admin"])
+    app.include_router(ai_matching.router)
 
     @app.get("/")
     async def root():

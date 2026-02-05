@@ -142,6 +142,10 @@ export default function AdminSettings() {
             <span className="font-medium">Polygon Amoy</span>
           </div>
           <div className="flex justify-between">
+            <span className="text-gray-500">최종 업데이트</span>
+            <span className="font-medium text-blue-600">2026.02.05</span>
+          </div>
+          <div className="flex justify-between">
             <span className="text-gray-500">전체 회원</span>
             <span className="font-medium">{workers.length}명</span>
           </div>

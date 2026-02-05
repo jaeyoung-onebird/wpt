@@ -69,8 +69,11 @@ export default function EventDetail() {
       loadEvent();
     } catch (error) {
       console.error('Application error:', error);
-      const errorMessage = error.response?.data?.detail || error.message || '지원에 실패했습니다';
-      alert(errorMessage);
+      const errorMessage = error.response?.data?.detail ||
+                          error.response?.data?.message ||
+                          error.message ||
+                          '지원에 실패했습니다';
+      alert(typeof errorMessage === 'string' ? errorMessage : JSON.stringify(errorMessage));
     } finally {
       setApplying(false);
     }
@@ -85,7 +88,11 @@ export default function EventDetail() {
       alert('지원이 취소되었습니다');
       loadEvent();
     } catch (error) {
-      alert(error.response?.data?.detail || '취소에 실패했습니다');
+      const errorMsg = error.response?.data?.detail ||
+                      error.response?.data?.message ||
+                      error.message ||
+                      '취소에 실패했습니다';
+      alert(typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg));
     }
   };
 

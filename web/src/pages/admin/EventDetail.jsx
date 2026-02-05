@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { eventsAPI, adminAPI, workersAPI } from '../../api/client';
+import { eventsAPI, adminAPI, workersAPI, aiMatchingAPI } from '../../api/client';
 import { formatDateTime } from '../../utils/format';
 
 export default function AdminEventDetail() {
@@ -13,6 +13,9 @@ export default function AdminEventDetail() {
   const [copied, setCopied] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [showAIModal, setShowAIModal] = useState(false);
+  const [aiRecommendations, setAiRecommendations] = useState([]);
+  const [loadingAI, setLoadingAI] = useState(false);
 
 
   useEffect(() => {
@@ -93,6 +96,19 @@ export default function AdminEventDetail() {
       alert(error.response?.data?.detail || '삭제에 실패했습니다');
       setDeleting(false);
       setShowDeleteModal(false);
+    }
+  };
+
+  const loadAIRecommendations = async () => {
+    setLoadingAI(true);
+    try {
+      const { data } = await aiMatchingAPI.getRecommendedWorkers(id, 20, 60);
+      setAiRecommendations(data.recommendations || []);
+      setShowAIModal(true);
+    } catch (error) {
+      alert(error.response?.data?.detail || 'AI 추천을 불러오는데 실패했습니다');
+    } finally {
+      setLoadingAI(false);
     }
   };
 
@@ -260,6 +276,26 @@ export default function AdminEventDetail() {
       {/* 컨텐츠 */}
       {tab === 'applications' ? (
         <div className="space-y-3">
+          {/* AI 추천 버튼 */}
+          <button
+            onClick={loadAIRecommendations}
+            disabled={loadingAI}
+            className="w-full py-3 rounded-xl font-semibold text-white transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+            style={{ backgroundColor: loadingAI ? 'var(--color-bg)' : 'var(--color-secondary)' }}
+          >
+            {loadingAI ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                AI가 분석 중...
+              </>
+            ) : (
+              <>
+                <span>🤖</span>
+                AI 추천 근무자 보기
+              </>
+            )}
+          </button>
+
           {applications.length > 0 ? (
             applications.map((app) => (
               <div key={app.id} className="card">
@@ -451,6 +487,98 @@ export default function AdminEventDetail() {
                 {deleting ? '삭제 중...' : '삭제'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI 추천 근무자 모달 */}
+      {showAIModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }} onClick={() => setShowAIModal(false)}>
+          <div className="w-full max-w-2xl max-h-[80vh] rounded-2xl p-6 overflow-y-auto" style={{ backgroundColor: 'var(--color-bg-card)' }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <span className="text-2xl">🤖</span>
+                <h3 className="text-lg font-bold" style={{ color: 'var(--color-text-title)' }}>AI 추천 근무자</h3>
+              </div>
+              <button onClick={() => setShowAIModal(false)} className="text-2xl" style={{ color: 'var(--color-text-sub)' }}>×</button>
+            </div>
+
+            {aiRecommendations.length === 0 ? (
+              <div className="text-center py-8">
+                <p style={{ color: 'var(--color-text-sub)' }}>추천할 수 있는 근무자가 없습니다</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {aiRecommendations.map((rec) => (
+                  <div key={rec.id} className="border rounded-xl p-4" style={{ borderColor: 'var(--color-border)' }}>
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ backgroundColor: 'var(--color-bg)' }}>
+                          <span className="text-lg">👤</span>
+                        </div>
+                        <div>
+                          <h4 className="font-semibold" style={{ color: 'var(--color-text-title)' }}>{rec.name}</h4>
+                          <p className="text-sm" style={{ color: 'var(--color-text-sub)' }}>레벨 {rec.level}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xl font-bold" style={{ color: 'var(--color-primary)' }}>
+                          {rec.match_score.toFixed(0)}점
+                        </div>
+                        <div className="text-xs" style={{ color: 'var(--color-text-sub)' }}>매칭 점수</div>
+                      </div>
+                    </div>
+
+                    {/* 점수 세부사항 */}
+                    <div className="grid grid-cols-5 gap-2 mb-3">
+                      <div className="text-center">
+                        <div className="text-sm font-semibold" style={{ color: 'var(--color-text-title)' }}>
+                          {rec.score_breakdown.distance.toFixed(0)}
+                        </div>
+                        <div className="text-xs" style={{ color: 'var(--color-text-sub)' }}>거리</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-sm font-semibold" style={{ color: 'var(--color-text-title)' }}>
+                          {rec.score_breakdown.reliability.toFixed(0)}
+                        </div>
+                        <div className="text-xs" style={{ color: 'var(--color-text-sub)' }}>신뢰도</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-sm font-semibold" style={{ color: 'var(--color-text-title)' }}>
+                          {rec.score_breakdown.pay.toFixed(0)}
+                        </div>
+                        <div className="text-xs" style={{ color: 'var(--color-text-sub)' }}>급여</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-sm font-semibold" style={{ color: 'var(--color-text-title)' }}>
+                          {rec.score_breakdown.skill.toFixed(0)}
+                        </div>
+                        <div className="text-xs" style={{ color: 'var(--color-text-sub)' }}>스킬</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-sm font-semibold" style={{ color: rec.score_breakdown.availability === 0 ? 'var(--color-error)' : 'var(--color-text-title)' }}>
+                          {rec.score_breakdown.availability.toFixed(0)}
+                        </div>
+                        <div className="text-xs" style={{ color: 'var(--color-text-sub)' }}>가용성</div>
+                      </div>
+                    </div>
+
+                    {/* 추가 정보 */}
+                    <div className="flex gap-2 text-xs flex-wrap">
+                      {rec.has_driver_license && (
+                        <span className="px-2 py-1 rounded-full" style={{ backgroundColor: 'var(--color-primary-light)', color: 'var(--color-primary)' }}>운전면허</span>
+                      )}
+                      {rec.has_security_cert && (
+                        <span className="px-2 py-1 rounded-full" style={{ backgroundColor: 'var(--color-secondary-light)', color: 'var(--color-secondary)' }}>경호이수증</span>
+                      )}
+                      <span className="px-2 py-1 rounded-full" style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text-secondary)' }}>
+                        완료 {rec.completed_events}건
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

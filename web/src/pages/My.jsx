@@ -598,6 +598,25 @@ export default function My() {
         </div>
       </div>
 
+      {/* 시스템 정보 */}
+      <div className="card">
+        <h3 className="font-semibold mb-3" style={{ color: 'var(--color-text-title)' }}>시스템 정보</h3>
+        <div className="space-y-2">
+          <div className="flex justify-between items-center">
+            <span className="text-sm" style={{ color: 'var(--color-text-sub)' }}>버전</span>
+            <span className="text-sm font-medium" style={{ color: 'var(--color-text-title)' }}>2.0.0</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-sm" style={{ color: 'var(--color-text-sub)' }}>블록체인</span>
+            <span className="text-sm font-medium" style={{ color: 'var(--color-text-title)' }}>Polygon Amoy</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-sm" style={{ color: 'var(--color-text-sub)' }}>최종 업데이트</span>
+            <span className="text-sm font-medium" style={{ color: 'var(--color-primary)' }}>2026.02.05</span>
+          </div>
+        </div>
+      </div>
+
       {/* 로그아웃 */}
       <button
         onClick={handleLogout}

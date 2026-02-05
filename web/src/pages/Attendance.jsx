@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { attendanceAPI } from '../api/client';
 import { formatTime, calculateWorkHours } from '../utils/format';
+import WPTRewardAnimation from '../components/WPTRewardAnimation';
 
 export default function Attendance() {
   const { worker } = useAuth();
@@ -11,6 +12,7 @@ export default function Attendance() {
   const [submitting, setSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(null); // 'checkin' | 'checkout' | null
   const [lastAction, setLastAction] = useState(null); // 마지막 액션 정보
+  const [wptReward, setWptReward] = useState(null); // WPT 보상 데이터
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -52,6 +54,12 @@ export default function Attendance() {
       });
       setShowSuccess('checkin');
       setCheckInCode('');
+
+      // WPT 보상 애니메이션 표시
+      if (data.wpt_reward) {
+        setWptReward(data.wpt_reward);
+      }
+
       loadAttendance();
 
       // 3초 후 성공 화면 닫기
@@ -77,6 +85,12 @@ export default function Attendance() {
         netPay: netPay
       });
       setShowSuccess('checkout');
+
+      // WPT 보상 애니메이션 표시
+      if (data.wpt_reward) {
+        setWptReward(data.wpt_reward);
+      }
+
       loadAttendance();
 
       // 5초 후 성공 화면 닫기
@@ -406,6 +420,12 @@ export default function Attendance() {
           </div>
         )}
       </div>
+
+      {/* WPT 보상 애니메이션 */}
+      <WPTRewardAnimation
+        reward={wptReward}
+        onComplete={() => setWptReward(null)}
+      />
     </div>
   );
 }

@@ -67,25 +67,41 @@ def calculate_distance_score(worker_lat: float, worker_lon: float, event_lat: fl
 
 
 def calculate_reliability_score(worker_metrics: dict) -> float:
-    """신뢰도 점수 (0-100)"""
+    """신뢰도 점수 (0-100) - 최근 성과를 더 높게 반영"""
     if not worker_metrics:
         return 50.0
 
     # 기존 신뢰도 점수 사용
     base_score = worker_metrics.get("reliability_score", 50.0)
 
-    # 완료율 반영
+    # 전체 완료율
     total = worker_metrics.get("total_events", 0)
     completed = worker_metrics.get("completed_events", 0)
 
-    if total > 0:
+    # 최근 3개월 완료율 (더 높은 가중치)
+    recent_total = worker_metrics.get("recent_total", 0)
+    recent_completed = worker_metrics.get("recent_completed", 0)
+
+    # 점수 계산
+    if recent_total > 5:
+        # 최근 실적이 충분하면 최근 성과를 60% 반영
+        recent_rate = (recent_completed / recent_total) * 100
+        overall_rate = (completed / total) * 100 if total > 0 else 50.0
+        score = (base_score * 0.2) + (recent_rate * 0.6) + (overall_rate * 0.2)
+    elif total > 0:
+        # 최근 실적이 적으면 전체 완료율 위주
         completion_rate = (completed / total) * 100
-        # 가중 평균
-        score = (base_score * 0.6) + (completion_rate * 0.4)
+        score = (base_score * 0.4) + (completion_rate * 0.6)
     else:
         score = base_score
 
-    return min(100.0, max(0.0, score))
+    # 레벨 보너스 (경험이 많을수록 신뢰도 상승)
+    level = worker_metrics.get("level", 1)
+    level_bonus = (level - 1) * 2  # 레벨당 +2점
+
+    final_score = score + level_bonus
+
+    return min(100.0, max(0.0, final_score))
 
 
 def calculate_pay_score(event_pay: float, worker_avg_pay: float) -> float:
@@ -115,7 +131,7 @@ def calculate_pay_score(event_pay: float, worker_avg_pay: float) -> float:
 
 
 def calculate_skill_score(event_requirements: dict, worker_skills: dict) -> float:
-    """스킬 매칭 점수 (0-100)"""
+    """스킬 매칭 점수 (0-100) - 레벨과 경력 반영"""
     # 이벤트 자격 요건
     requires_driver = event_requirements.get("requires_driver_license", False)
     requires_security = event_requirements.get("requires_security_cert", False)
@@ -123,6 +139,8 @@ def calculate_skill_score(event_requirements: dict, worker_skills: dict) -> floa
     # 근무자 자격
     has_driver = worker_skills.get("has_driver_license", False)
     has_security = worker_skills.get("has_security_cert", False)
+    level = worker_skills.get("level", 1)
+    completed_events = worker_skills.get("completed_events", 0)
 
     score = 50.0  # 기본 점수
 
@@ -144,6 +162,24 @@ def calculate_skill_score(event_requirements: dict, worker_skills: dict) -> floa
         score += 10.0
     if has_security and not requires_security:
         score += 10.0
+
+    # 레벨 보너스 (숙련도 반영)
+    level_bonus = min((level - 1) * 3, 15)  # 레벨당 +3점, 최대 +15점
+    score += level_bonus
+
+    # 경력 보너스 (완료한 행사 수)
+    if completed_events >= 50:
+        experience_bonus = 10.0
+    elif completed_events >= 20:
+        experience_bonus = 7.0
+    elif completed_events >= 10:
+        experience_bonus = 5.0
+    elif completed_events >= 5:
+        experience_bonus = 3.0
+    else:
+        experience_bonus = 0.0
+
+    score += experience_bonus
 
     return min(100.0, score)
 
@@ -212,11 +248,36 @@ def calculate_match_score(
 
     # 각 점수 계산
     # 1. 거리 점수 (위치 정보 있으면)
-    # TODO: 실제 위치 정보 사용
-    distance_score = 75.0  # 임시
+    worker_lat = float(worker.get("residence_lat")) if worker.get("residence_lat") else None
+    worker_lon = float(worker.get("residence_lng")) if worker.get("residence_lng") else None
+    event_lat = float(event.get("location_lat")) if event.get("location_lat") else None
+    event_lon = float(event.get("location_lng")) if event.get("location_lng") else None
 
-    # 2. 신뢰도 점수
-    reliability_score = calculate_reliability_score(dict(metrics) if metrics else None)
+    distance_score = calculate_distance_score(worker_lat, worker_lon, event_lat, event_lon)
+
+    # 2. 신뢰도 점수 (최근 성과 반영)
+    with db.get_connection() as conn:
+        cursor = conn.cursor()
+        # 최근 3개월 완료율 조회
+        cursor.execute("""
+            SELECT
+                COUNT(*) as recent_total,
+                COUNT(CASE WHEN a.check_out_time IS NOT NULL THEN 1 END) as recent_completed
+            FROM applications app
+            LEFT JOIN attendance a ON a.application_id = app.id
+            WHERE app.worker_id = %s
+            AND app.created_at >= NOW() - INTERVAL '3 months'
+        """, (worker_id,))
+        recent_data = cursor.fetchone()
+
+        recent_performance = {
+            "recent_total": recent_data[0] if recent_data else 0,
+            "recent_completed": recent_data[1] if recent_data else 0
+        }
+
+    metrics_dict = dict(metrics) if metrics else {}
+    metrics_dict.update(recent_performance)
+    reliability_score = calculate_reliability_score(metrics_dict)
 
     # 3. 급여 점수
     event_pay = float(event["pay_amount"]) if event.get("pay_amount") else 0
@@ -231,7 +292,9 @@ def calculate_match_score(
         },
         {
             "has_driver_license": worker.get("has_driver_license", False),
-            "has_security_cert": worker.get("has_security_cert", False)
+            "has_security_cert": worker.get("has_security_cert", False),
+            "level": metrics.get("level", 1) if metrics else 1,
+            "completed_events": metrics.get("completed_events", 0) if metrics else 0
         }
     )
 

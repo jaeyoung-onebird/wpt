@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { eventsAPI, applicationsAPI, attendanceAPI, workersAPI, badgesAPI } from '../api/client';
+import AIRecommendations from '../components/AIRecommendations';
 
 // 오늘 날짜의 일정 가져오기
 const getTodaySchedule = (applications, events) => {
@@ -359,6 +360,13 @@ export default function Home() {
             })()}
           </div>
         </Link>
+      )}
+
+      {/* AI 추천 행사 (로그인한 워커만) */}
+      {worker && (
+        <div className="mb-6">
+          <AIRecommendations limit={5} />
+        </div>
       )}
 
       {/* 3. 추천 행사 - 프리미엄 카드 디자인 */}

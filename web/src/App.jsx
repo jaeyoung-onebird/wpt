@@ -13,18 +13,16 @@ import Badges from './pages/Badges';
 import BadgeDetail from './pages/BadgeDetail';
 
 // 새 통합 페이지 (Work OS)
-import WorkOS from './pages/WorkOS'; // 통합 Work 페이지
 import Attendance from './pages/Attendance';
-import History from './pages/History'; // 새 History 페이지 (WPT + NFT + 이력)
+import History from './pages/History';
 import My from './pages/My';
 import Notifications from './pages/Notifications';
 import Leaderboard from './pages/Leaderboard';
 
 // 레거시 페이지 (리다이렉트용)
 import Wallet from './pages/Wallet';
-import Work from './pages/Work';
+import WorkOS from './pages/WorkOS';
 import Collection from './pages/Collection';
-import CalendarPage from './pages/Calendar';
 
 // 관리자 페이지
 import AdminDashboard from './pages/admin/Dashboard';
@@ -39,6 +37,7 @@ import AdminAnalytics from './pages/admin/Analytics';
 import AdminBigData from './pages/admin/BigData';
 import AdminCompletedEvents from './pages/admin/CompletedEvents';
 import AdminNftIssue from './pages/admin/NftIssue';
+import AdminFinance from './pages/admin/Finance';
 
 // 인증 필요 라우트
 function PrivateRoute({ children }) {
@@ -139,18 +138,11 @@ function AppRoutes() {
           path="/work"
           element={
             <PrivateRoute>
-              <Work />
+              <WorkOS />
             </PrivateRoute>
           }
         />
-        <Route
-          path="/calendar"
-          element={
-            <PrivateRoute>
-              <CalendarPage />
-            </PrivateRoute>
-          }
-        />
+        <Route path="/calendar" element={<Navigate to="/work?tab=calendar" replace />} />
         <Route
           path="/collection"
           element={
@@ -164,6 +156,14 @@ function AppRoutes() {
           element={
             <PrivateRoute>
               <My />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/history"
+          element={
+            <PrivateRoute>
+              <History />
             </PrivateRoute>
           }
         />
@@ -238,6 +238,14 @@ function AppRoutes() {
           element={
             <AdminRoute>
               <AdminSettings />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/admin/finance"
+          element={
+            <AdminRoute>
+              <AdminFinance />
             </AdminRoute>
           }
         />

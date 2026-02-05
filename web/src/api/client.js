@@ -269,4 +269,42 @@ export const bigdataAPI = {
   batchUpdateCumulative: () => api.post('/api/bigdata/batch/update-cumulative'),
 };
 
+// Gamification API
+export const gamificationAPI = {
+  // 내 통계
+  getMyStats: () => api.get('/api/gamification/me/stats'),
+  getMyStreaks: () => api.get('/api/gamification/me/streaks'),
+
+  // 리더보드
+  getLeaderboard: (period = 'all', limit = 50) =>
+    api.get('/api/gamification/leaderboard', { params: { period, limit } }),
+
+  // 보상 (attendance API에서 자동 호출되므로 frontend에서 직접 호출 불필요)
+  // checkinReward: (attendanceId) => api.post('/api/gamification/checkin-reward', { attendance_id: attendanceId }),
+  // checkoutReward: (attendanceId) => api.post('/api/gamification/checkout-reward', { attendance_id: attendanceId }),
+
+  // 레벨 시스템
+  getLevels: () => api.get('/api/gamification/levels'),
+  getMyLevel: () => api.get('/api/gamification/me/level'),
+
+  // WPT 거래 내역
+  getMyTransactions: (limit = 50, txType = null) =>
+    api.get('/api/gamification/me/wpt-transactions', { params: { limit, tx_type: txType } }),
+};
+
+// AI Matching API
+export const aiMatchingAPI = {
+  // 근로자용: 추천 행사 (auth required)
+  getRecommendedEvents: (limit = 10, minScore = 50) =>
+    api.get('/api/ai/recommend-events', { params: { limit, min_score: minScore } }),
+
+  // 관리자용: 추천 근로자 (auth required)
+  getRecommendedWorkers: (eventId, limit = 20, minScore = 60) =>
+    api.get(`/api/ai/recommend-workers/${eventId}`, { params: { limit, min_score: minScore } }),
+
+  // 매칭 통계 (admin only)
+  getMatchingStats: (days = 30) =>
+    api.get('/api/ai/matching-stats', { params: { days } }),
+};
+
 export default api;
