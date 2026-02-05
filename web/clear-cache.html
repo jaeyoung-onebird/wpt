@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head><title>Cache Cleared</title></head>
+<body>
+<h1>캐시가 삭제되었습니다</h1>
+<p>5초 후 자동으로 메인 페이지로 이동합니다...</p>
+<script>
+  // Clear all storage
+  localStorage.clear();
+  sessionStorage.clear();
+  
+  // Clear service worker cache
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then(registrations => {
+      registrations.forEach(reg => reg.unregister());
+    });
+  }
+  
+  // Clear caches
+  if ('caches' in window) {
+    caches.keys().then(names => {
+      names.forEach(name => caches.delete(name));
+    });
+  }
+  
+  setTimeout(() => {
+    window.location.href = '/';
+  }, 5000);
+</script>
+</body>
+</html>
